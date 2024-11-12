@@ -78,6 +78,18 @@ class Input_Box():
         self.input_surf = button_font.render(self.input, True, self.color)
         screen.blit(self.input_surf, (self.x+5, self.y+5))
     
+    def resize_box(self): 
+        if self.width <= self.input_surf.get_width():
+            self.rect.width = self.input_surf.get_width()+10
+        username_box.display()
+        username_box.resize()
+    
+    def presence_check(self):
+        if len(self.input)> 0 :
+            return True
+        else:
+            return False
+
     # update text surf upon input
     def input_text(self,event):
         if event.type == pygame.KEYDOWN:
@@ -120,7 +132,7 @@ login_subtitle = Text('LOGIN', 650, 275, orange, subtitle_font)
 create_account_button = Button('create an account', 650, 550, orange, button_font)
 create_account_subtitle = Text('CREATE AN ACCOUNT', 650, 275, orange, subtitle_font)
 
-username_box = Input_Box(300, 300, 200, 30)
+username_box = Input_Box(450, 400, 250, 30)
 #mainMenu_subtitle = Text('MENU', 650, 275, orange, subtitle_font)
 
 
@@ -171,10 +183,10 @@ while login_loop:
     # (add user and pass box in this screen)
     create_account_button.draw()
     username_box.display()
-
+    
     pygame.display.update()
     clock.tick(60)
-        #if
+    
 
 # CREATE ACCOUNT LOOP HERE
 
