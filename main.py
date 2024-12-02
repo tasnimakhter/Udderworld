@@ -52,6 +52,7 @@ class Input_Box:
         while self.font.render(self.input, True, self.color).get_width() > self.max_width:
             self.input = self.input[:-1]
 
+
     def display(self):
         # Render the input text inside the box
         pygame.draw.rect(screen, (0, 0, 0), self.rect)  # Draw background
@@ -93,8 +94,50 @@ class Input_Box:
                 self.selected = False
                 self.color = red
 
-        if self.selected:
-            self.input_text(event)
+        if self.selected and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_BACKSPACE:
+                self.input = self.input[:-1]  # Remove the last character
+            elif event.unicode and (event.unicode.isalnum() or event.unicode in "._@"):
+                self.input += event.unicode
+                self.truncate_input()
+
+# password box - asterisk for privacy, inherited from the input box
+# OOP Password Box Class
+class Password_Box(Input_Box):
+    def __init__(self, x, y, width, height):
+        super().__init__(x, y, width, height)
+        self.password = "" # stores actual password
+
+    def display(self):
+        # Display masked password with asterisks
+        pygame.draw.rect(screen, (0, 0, 0), self.rect)  # Box background
+        pygame.draw.rect(screen, self.color, self.rect, 2)  # Box border
+        masked_input = "*" * len(self.password)
+        input_surf = self.font.render(masked_input, True, self.color)
+        screen.blit(input_surf, (self.rect.x + 5, self.rect.y + 5))
+
+    def handle_event(self, event):
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            # Select the box
+            if self.rect.collidepoint(event.pos):
+                self.selected = True
+                self.color = green
+            else:
+                self.selected = False
+                self.color = red
+
+        if self.selected and event.type == pygame.KEYDOWN:
+            if event.key == pygame.K_BACKSPACE:
+                self.password = self.password[:-1]
+            elif event.unicode and (event.unicode.isalnum() or event.unicode in "._@"):
+                self.password += event.unicode
+                self.truncate_input()
+
+    def truncate_input(self):
+        # Ensure the password stays within the box
+        while self.font.render("*" * len(self.password), True, self.color).get_width() > self.max_width:
+            self.password = self.password[:-1]
+
 
 # OOP TEXT CLASS
 class Text:
@@ -126,9 +169,12 @@ class Button(Text):
 username_box = Input_Box(600, 400, 250, 50)
 username_box.set_font_size(40)
 username_subtitle = Text('USERNAME', 500, 400, orange, box_subtitle_font)
+passwordcheck_box = Password_Box(300, 400, 200, 30)
 password_box = Input_Box(600, 480, 250, 50)
 password_box.set_font_size(40)
 password_subtitle = Text('PASSWORD', 500, 480, orange, box_subtitle_font)
+login_boxes = [username_box, password_box]
+create_account_boxes = [username_box, password_box, passwordcheck_box]
 
 # BUTTON OBJECTS & SUBTITLE
 login_button = Button('LOGIN', 650, 300, orange, button_font)
@@ -179,6 +225,8 @@ while login_loop:
     username_subtitle.draw()
     password_box.display()
     password_subtitle.draw()
+
+
 
     pygame.display.update()
     clock.tick(60)
