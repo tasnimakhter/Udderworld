@@ -14,6 +14,7 @@ orange = (255, 69, 0)
 red = (255, 0, 0)
 blue = (0, 0, 255)
 green = (0, 255, 0)
+yellow = (255, 255, 0)
 
 # TEXT FONT AND TEXT DEFINITIONS
 subtitle_font = pygame.font.Font('pixelFont.ttf', 80)
@@ -89,7 +90,7 @@ class Input_Box:
             # Activate box if clicked
             if self.rect.collidepoint(pygame.mouse.get_pos()):
                 self.selected = True
-                self.color = green
+                self.color = yellow
             else:
                 self.selected = False
                 self.color = red
@@ -109,7 +110,7 @@ class Password_Box(Input_Box):
         self.password = "" # stores actual password
 
     def display(self):
-        # Display masked password with asterisks
+        # Display original password as asterisks
         pygame.draw.rect(screen, (0, 0, 0), self.rect)  # Box background
         pygame.draw.rect(screen, self.color, self.rect, 2)  # Box border
         masked_input = "*" * len(self.password)
@@ -121,7 +122,7 @@ class Password_Box(Input_Box):
             # Select the box
             if self.rect.collidepoint(event.pos):
                 self.selected = True
-                self.color = green
+                self.color = yellow
             else:
                 self.selected = False
                 self.color = red
@@ -170,18 +171,28 @@ username_box = Input_Box(600, 400, 250, 50)
 username_box.set_font_size(40)
 username_subtitle = Text('USERNAME', 500, 400, orange, box_subtitle_font)
 passwordcheck_box = Password_Box(300, 400, 200, 30)
-password_box = Input_Box(600, 480, 250, 50)
+password_box = Password_Box(600, 480, 250, 50)
 password_box.set_font_size(40)
 password_subtitle = Text('PASSWORD', 500, 480, orange, box_subtitle_font)
 login_boxes = [username_box, password_box]
-create_account_boxes = [username_box, password_box, passwordcheck_box]
+
+
+
 
 # BUTTON OBJECTS & SUBTITLE
 login_button = Button('LOGIN', 650, 300, orange, button_font)
 controls_button = Button('CONTROLS', 650, 400, orange, button_font)
 exit_button = Button('EXIT', 650, 500, orange, button_font)
 login_subtitle = Text('LOGIN', 650, 275, orange, subtitle_font)
+
 create_account_button = Button('create an account', 650, 550, orange, button_font)
+submit_button = Button('SUBMIT', 1100, 430, yellow, button_font)
+create_account_subtitle = Text('CREATE AN ACCOUNT', 650, 275, orange, subtitle_font)
+create_account_submit_button = Button('SUBMIT', 1100, 430, yellow, button_font)
+passwordcheck_box = Password_Box(600, 560, 250, 50)
+confirm_password_subtitle = Text('CONFIRM PASSWORD', 430, 567, orange, box_subtitle_font)
+create_account_boxes = [username_box, password_box, passwordcheck_box]
+
 
 # Game loop
 while mainMenu_loop:
@@ -201,6 +212,9 @@ while mainMenu_loop:
         if login_button.check_if_clicked(event):
             mainMenu_loop = False
             login_loop = True
+        if controls_button.check_if_clicked(event):
+            mainMenu_loop = False
+            controls_loop = True
 
     pygame.display.update()
 
@@ -214,9 +228,27 @@ while login_loop:
             mainMenu_loop = False
         if create_account_button.check_if_clicked(event):
             login_loop = False
+            create_account_loop = True
 
+        # handle events for each box
         username_box.handle_event(event)
         password_box.handle_event(event)
+
+        username = username_box.input.strip() # removes extra spaces on the end
+        password = password_box.password.strip()
+
+        # checks if submit button has been pressed
+        if submit_button.check_if_clicked(event):
+            if event.type == pygame.MOUSEBUTTONUP:
+                # presence and length checks
+                if not username:
+                    print("Username cannot be empty!")
+                elif not password:
+                    print("Password cannot be empty!")
+                elif len(password) < 8:
+                    print("Password must be 8 chars min.")
+                else:
+                    print(f"Inputs submitted: USERNAME: {username}, PASSWORD: {password}")
 
     screen.blit(background_image, (0, 0))
     login_subtitle.draw()
@@ -225,11 +257,61 @@ while login_loop:
     username_subtitle.draw()
     password_box.display()
     password_subtitle.draw()
+    submit_button.draw()
 
 
 
     pygame.display.update()
     clock.tick(60)
+
+while create_account_loop:
+    for event in pygame.event.get():
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_ESCAPE]:  # Allow user to exit loop with ESC
+            create_account_loop = False
+        if event.type == pygame.QUIT:
+            create_account_loop = False
+            mainMenu_loop = False
+
+        # Handle events for each box
+        for box in create_account_boxes:
+            box.handle_event(event)
+
+        # Retrieve inputs
+        username = username_box.input.strip()
+        password = password_box.password.strip()
+        confirm_password = passwordcheck_box.password.strip()
+
+        # Check if the create account submit button is pressed
+        if create_account_submit_button.check_if_clicked(event):
+            if event.type == pygame.MOUSEBUTTONUP:
+                # Presence checks and validation
+                if not username:
+                    print("Username cannot be empty!")
+                elif not password:
+                    print("Password cannot be empty!")
+                elif len(password) < 8:
+                    print("Password must be at least 8 characters long!")
+                elif password != confirm_password:
+                    print("Passwords do not match!")
+                else:
+                    print(f"Account created successfully: USERNAME: {username}, PASSWORD: {password}")
+                    create_account_loop = False  # Exit the loop after successful creation
+
+    # Draw the create account screen
+    screen.blit(background_image, (0, 0))
+    create_account_subtitle.draw()
+    username_box.display()
+    username_subtitle.draw()
+    password_box.display()
+    password_subtitle.draw()
+    passwordcheck_box.display()
+    confirm_password_subtitle.draw()
+    create_account_submit_button.draw()
+
+    pygame.display.update()
+    clock.tick(60)
+
 
 pygame.quit()
 
