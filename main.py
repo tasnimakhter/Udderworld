@@ -8,6 +8,8 @@ pygame.display.set_caption('UDDERWORLD')
 
 # Load the background image once outside the loop
 background_image = pygame.image.load('background.png').convert()
+controls1_image = pygame.image.load('controls1-1.png').convert()
+controls2_image = pygame.image.load('controls2-1.png').convert()
 
 # Font colors
 orange = (255, 69, 0)
@@ -164,8 +166,17 @@ login_subtitle = Text('LOGIN', 650, 275, orange, subtitle_font)
 create_account_button = Button('CREATE ACCOUNT', 650, 550, orange, button_font)
 create_account_submit_button = Button('SUBMIT', 1100, 430, yellow, button_font)
 back_button = Button('BACK', 200, 600, red, button_font)
+backTOP_button = Button('BACK', 140, 40, red, button_font)
+
+switch_button = Button('SWITCH?', 1110, 40, red, button_font)
 
 create_account_subtitle = Text('CREATE AN ACCOUNT', 650, 275, orange, subtitle_font)
+validation1_subtitle = Text('Username cannot be empty!', 200, 400, orange, subtitle_font)
+validation2_subtitle = Text('Password cannot be empty!', 200, 400, orange, subtitle_font)
+validation3_subtitle = Text('Password must be at least 8 characters long!', 200, 400, orange, subtitle_font)
+validation4_subtitle = Text('Passwords do not match!', 200, 400, orange, subtitle_font)
+success_subtitle = Text('Success!', 200, 400, orange, subtitle_font)
+
 
 create_account_boxes = [username_box, password_box, passwordcheck_box]
 
@@ -181,6 +192,9 @@ while True:
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if exit_button.check_if_clicked(event):
                 pygame.quit()
                 exit()
             if login_button.check_if_clicked(event):
@@ -201,6 +215,7 @@ while True:
         password_box.display()
         password_subtitle.draw()
         create_account_submit_button.draw()
+        back_button.draw()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -214,6 +229,11 @@ while True:
             username_box.handle_event(event)
             password_box.handle_event(event)
 
+            # Back Button Logic
+            if back_button.check_if_clicked(event):
+                current_screen = "main_menu"
+          
+
             # Submit Button Logic
             if create_account_submit_button.check_if_clicked(event):
                 username = username_box.input.strip()
@@ -221,11 +241,15 @@ while True:
 
                 if not username:
                     print("Username cannot be empty!")
+                    validation1_subtitle.draw()
                 elif not password:
                     print("Password cannot be empty!")
+                    validation2_subtitle.draw()
                 elif len(password) < 8:
                     print("Password must be at least 8 characters long!")
+                    validation3_subtitle.draw()
                 else:
+                    success_subtitle.draw()
                     print(f"Inputs submitted: USERNAME: {username}, PASSWORD: {password}")
 
         pygame.display.update()
@@ -265,14 +289,19 @@ while True:
                 confirm_password = passwordcheck_box.password.strip()
 
                 if not username:
+                    validation1_subtitle.draw()
                     print("Username cannot be empty!")
                 elif not password:
+                    validation2_subtitle.draw()
                     print("Password cannot be empty!")
                 elif len(password) < 8:
+                    validation3_subtitle.draw()
                     print("Password must be at least 8 characters long!")
                 elif password != confirm_password:
+                    validation4_subtitle.draw()
                     print("Passwords do not match!")
                 else:
+                    success_subtitle.draw()
                     print(f"Account created successfully: USERNAME: {username}, PASSWORD: {password}")
                     current_screen = "login"
                     username_box.clear_input()
@@ -282,8 +311,9 @@ while True:
         pygame.display.update()
 
     elif current_screen == "controls":
-        screen.blit(background_image, (0, 0))  # Draw background image
-        back_button.draw()  # Back button to return to main menu
+        screen.blit(controls1_image, (0, 0))  # Draw background image
+        backTOP_button.draw()  # Back button to return to main menu
+        switch_button.draw() # Switch to alternative controls
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -291,9 +321,34 @@ while True:
                 exit()
 
             # Back Button Logic
-            if back_button.check_if_clicked(event):
+            if backTOP_button.check_if_clicked(event):
                 current_screen = "main_menu"
 
+            if switch_button.check_if_clicked(event):
+                current_screen == "altcontrols"
+                
+
         pygame.display.update()
+
+    elif current_screen == "altcontrols":
+        screen.blit(controls2_image, (0, 0))  # Draw background image
+        ''' the button pics aren't right and text should be in yellow not green, go back on ppt and change this image, also the screen image will not switch for some reason '''
+        backTOP_button.draw()  # Back button to return to main menu
+        switch_button.draw() # Switch to alternative controls
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+            # Back Button Logic
+            if backTOP_button.check_if_clicked(event):
+                current_screen = "main_menu"
+
+            if switch_button.check_if_clicked(event):
+                current_screen == "controls"
+
+        pygame.display.update()
+
 
     clock.tick(60)
