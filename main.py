@@ -22,11 +22,6 @@ box_subtitle_font = pygame.font.Font('pixelFont.ttf', 30)
 button_font = pygame.font.Font('pixelFont.ttf', 75)
 username_font = pygame.font.Font('pixelFont.ttf', 40)
 
-# LOOPS
-mainMenu_loop = True
-login_loop = False
-controls_loop = False
-
 # OOP INPUT CLASS
 class Input_Box:
     def __init__(self, x, y, width, height, input=''):
@@ -38,7 +33,6 @@ class Input_Box:
         self.color = orange
         self.selected = False
         self.font = username_font  # Default font
-        # Timer for backspace key handling
         self.backspace_timer = 0
         self.backspace_delay = 200  # Delay in milliseconds
         self.rect = pygame.Rect(x, y, width, height)
@@ -53,39 +47,16 @@ class Input_Box:
         while self.font.render(self.input, True, self.color).get_width() > self.max_width:
             self.input = self.input[:-1]
 
-
     def display(self):
         # Render the input text inside the box
         pygame.draw.rect(screen, (0, 0, 0), self.rect)  # Draw background
         pygame.draw.rect(screen, self.color, self.rect, 2)  # Draw border
-        # Ensure self.input is a string before rendering
         input_text = self.input if isinstance(self.input, str) else ""
         input_surf = self.font.render(input_text, True, self.color)
         screen.blit(input_surf, (self.x + 5, self.y + 5))  # Render text with padding
 
-    def input_text(self, event):
-        if event.type == pygame.KEYDOWN:
-            # Remove the last character if backspace is pressed
-            if event.key == pygame.K_BACKSPACE:
-                current_time = pygame.time.get_ticks()
-                if current_time - self.backspace_timer > self.backspace_delay:
-                    self.input = self.input[:-1]  # Remove last character
-                    self.backspace_timer = current_time  # Reset the timer
-
-            # Add character unless tab, enter, or invalid key
-            elif event.key != pygame.K_TAB and event.key != pygame.K_RETURN:
-                if event.unicode:  # Ensure valid input
-                    char = str(event.unicode)  # Convert to string
-                    if char.isalnum() or char in "._@":  # Allow letters, numbers, and . _ @
-                        self.input += char
-                        self.truncate_input()
-
-        elif event.type == pygame.KEYUP:
-            # Reset timer when the key is released
-            if event.key == pygame.K_BACKSPACE:
-                self.backspace_timer = 0
-
     def handle_event(self, event):
+        # Handle mouse click and key press events for input boxes
         if event.type == pygame.MOUSEBUTTONDOWN:
             # Activate box if clicked
             if self.rect.collidepoint(pygame.mouse.get_pos()):
@@ -97,17 +68,20 @@ class Input_Box:
 
         if self.selected and event.type == pygame.KEYDOWN:
             if event.key == pygame.K_BACKSPACE:
-                self.input = self.input[:-1]  # Remove the last character
+                self.input = self.input[:-1]
             elif event.unicode and (event.unicode.isalnum() or event.unicode in "._@"):
                 self.input += event.unicode
                 self.truncate_input()
 
+    def clear_input(self):
+        # Clear the input text
+        self.input = ""
+
 # password box - asterisk for privacy, inherited from the input box
-# OOP Password Box Class
 class Password_Box(Input_Box):
     def __init__(self, x, y, width, height):
         super().__init__(x, y, width, height)
-        self.password = "" # stores actual password
+        self.password = ""  # stores actual password
 
     def display(self):
         # Display original password as asterisks
@@ -139,6 +113,9 @@ class Password_Box(Input_Box):
         while self.font.render("*" * len(self.password), True, self.color).get_width() > self.max_width:
             self.password = self.password[:-1]
 
+    def clear_input(self):
+        # Clear the password text
+        self.password = ""
 
 # OOP TEXT CLASS
 class Text:
@@ -159,133 +136,134 @@ class Text:
 class Button(Text):
     def __init__(self, text, x, y, color, font):
         super().__init__(text, x, y, color, font)
-        self.clicked = False
 
     def check_if_clicked(self, event):
-        if event.type == pygame.MOUSEBUTTONDOWN:
-            if self.rect.collidepoint(pygame.mouse.get_pos()):
-                self.clicked = True
-        return self.clicked
+        # Return True only if the button is clicked and the mouse button is released
+        if event.type == pygame.MOUSEBUTTONUP and self.rect.collidepoint(pygame.mouse.get_pos()):
+            return True
+        return False
 
+# Input Boxes & Subtitles
 username_box = Input_Box(600, 400, 250, 50)
 username_box.set_font_size(40)
 username_subtitle = Text('USERNAME', 500, 400, orange, box_subtitle_font)
-passwordcheck_box = Password_Box(300, 400, 200, 30)
+
 password_box = Password_Box(600, 480, 250, 50)
 password_box.set_font_size(40)
 password_subtitle = Text('PASSWORD', 500, 480, orange, box_subtitle_font)
-login_boxes = [username_box, password_box]
 
+passwordcheck_box = Password_Box(600, 560, 250, 50)
+confirm_password_subtitle = Text('CONFIRM PASSWORD', 430, 567, orange, box_subtitle_font)
 
-
-
-# BUTTON OBJECTS & SUBTITLE
+# Buttons and Titles
 login_button = Button('LOGIN', 650, 300, orange, button_font)
 controls_button = Button('CONTROLS', 650, 400, orange, button_font)
 exit_button = Button('EXIT', 650, 500, orange, button_font)
 login_subtitle = Text('LOGIN', 650, 275, orange, subtitle_font)
 
-create_account_button = Button('create an account', 650, 550, orange, button_font)
-submit_button = Button('SUBMIT', 1100, 430, yellow, button_font)
-create_account_subtitle = Text('CREATE AN ACCOUNT', 650, 275, orange, subtitle_font)
+create_account_button = Button('CREATE ACCOUNT', 650, 550, orange, button_font)
 create_account_submit_button = Button('SUBMIT', 1100, 430, yellow, button_font)
-passwordcheck_box = Password_Box(600, 560, 250, 50)
-confirm_password_subtitle = Text('CONFIRM PASSWORD', 430, 567, orange, box_subtitle_font)
+back_button = Button('BACK', 200, 600, red, button_font)
+
+create_account_subtitle = Text('CREATE AN ACCOUNT', 650, 275, orange, subtitle_font)
+
 create_account_boxes = [username_box, password_box, passwordcheck_box]
 
+# Screen Control
+current_screen = "main_menu"
 
-# Game loop
-while mainMenu_loop:
-    screen.blit(background_image, (0, 0))
-    login_button.draw()
-    controls_button.draw()
-    exit_button.draw()
+while True:
+    if current_screen == "main_menu":
+        screen.blit(background_image, (0, 0))
+        login_button.draw()
+        controls_button.draw()
+        exit_button.draw()
 
-    for event in pygame.event.get():
-        if event.type == pygame.QUIT:
-            mainMenu_loop = False
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_ESCAPE]:  # Check if the ESC key is pressed
-            mainMenu_loop = False
-        if exit_button.check_if_clicked(event):
-            mainMenu_loop = False
-        if login_button.check_if_clicked(event):
-            mainMenu_loop = False
-            login_loop = True
-        if controls_button.check_if_clicked(event):
-            mainMenu_loop = False
-            controls_loop = True
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if login_button.check_if_clicked(event):
+                current_screen = "login"
+                username_box.clear_input()
+                password_box.clear_input()
+            if controls_button.check_if_clicked(event):
+                current_screen = "controls"
 
-    pygame.display.update()
+        pygame.display.update()
 
-while login_loop:
-    for event in pygame.event.get():
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_ESCAPE]:  # Check if the ESC key is pressed
-            login_loop = False
-        if event.type == pygame.QUIT:
-            login_loop = False
-            mainMenu_loop = False
-        if create_account_button.check_if_clicked(event):
-            login_loop = False
-            create_account_loop = True
+    elif current_screen == "login":
+        screen.blit(background_image, (0, 0))
+        login_subtitle.draw()
+        create_account_button.draw()
+        username_box.display()
+        username_subtitle.draw()
+        password_box.display()
+        password_subtitle.draw()
+        create_account_submit_button.draw()
 
-        # handle events for each box
-        username_box.handle_event(event)
-        password_box.handle_event(event)
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if create_account_button.check_if_clicked(event):
+                current_screen = "create_account"
+                username_box.clear_input()
+                password_box.clear_input()
+                passwordcheck_box.clear_input()
+            username_box.handle_event(event)
+            password_box.handle_event(event)
 
-        username = username_box.input.strip() # removes extra spaces on the end
-        password = password_box.password.strip()
+            # Submit Button Logic
+            if create_account_submit_button.check_if_clicked(event):
+                username = username_box.input.strip()
+                password = password_box.password.strip()
 
-        # checks if submit button has been pressed
-        if submit_button.check_if_clicked(event):
-            if event.type == pygame.MOUSEBUTTONUP:
-                # presence and length checks
                 if not username:
                     print("Username cannot be empty!")
                 elif not password:
                     print("Password cannot be empty!")
                 elif len(password) < 8:
-                    print("Password must be 8 chars min.")
+                    print("Password must be at least 8 characters long!")
                 else:
                     print(f"Inputs submitted: USERNAME: {username}, PASSWORD: {password}")
 
-    screen.blit(background_image, (0, 0))
-    login_subtitle.draw()
-    create_account_button.draw()
-    username_box.display()
-    username_subtitle.draw()
-    password_box.display()
-    password_subtitle.draw()
-    submit_button.draw()
+        pygame.display.update()
 
+    elif current_screen == "create_account":
+        screen.blit(background_image, (0, 0))
+        create_account_subtitle.draw()
+        username_box.display()
+        username_subtitle.draw()
+        password_box.display()
+        password_subtitle.draw()
+        passwordcheck_box.display()
+        confirm_password_subtitle.draw()
+        create_account_submit_button.draw()
+        back_button.draw()
 
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
 
-    pygame.display.update()
-    clock.tick(60)
+            # Back Button Logic
+            if back_button.check_if_clicked(event):
+                current_screen = "login"
+                username_box.clear_input()
+                password_box.clear_input()
+                passwordcheck_box.clear_input()
 
-while create_account_loop:
-    for event in pygame.event.get():
-        keys = pygame.key.get_pressed()
-        if keys[pygame.K_ESCAPE]:  # Allow user to exit loop with ESC
-            create_account_loop = False
-        if event.type == pygame.QUIT:
-            create_account_loop = False
-            mainMenu_loop = False
+            username_box.handle_event(event)
+            password_box.handle_event(event)
+            passwordcheck_box.handle_event(event)
 
-        # Handle events for each box
-        for box in create_account_boxes:
-            box.handle_event(event)
+            # Submit Button Logic
+            if create_account_submit_button.check_if_clicked(event):
+                username = username_box.input.strip()
+                password = password_box.password.strip()
+                confirm_password = passwordcheck_box.password.strip()
 
-        # Retrieve inputs
-        username = username_box.input.strip()
-        password = password_box.password.strip()
-        confirm_password = passwordcheck_box.password.strip()
-
-        # Check if the create account submit button is pressed
-        if create_account_submit_button.check_if_clicked(event):
-            if event.type == pygame.MOUSEBUTTONUP:
-                # Presence checks and validation
                 if not username:
                     print("Username cannot be empty!")
                 elif not password:
@@ -296,22 +274,26 @@ while create_account_loop:
                     print("Passwords do not match!")
                 else:
                     print(f"Account created successfully: USERNAME: {username}, PASSWORD: {password}")
-                    create_account_loop = False  # Exit the loop after successful creation
+                    current_screen = "login"
+                    username_box.clear_input()
+                    password_box.clear_input()
+                    passwordcheck_box.clear_input()
 
-    # Draw the create account screen
-    screen.blit(background_image, (0, 0))
-    create_account_subtitle.draw()
-    username_box.display()
-    username_subtitle.draw()
-    password_box.display()
-    password_subtitle.draw()
-    passwordcheck_box.display()
-    confirm_password_subtitle.draw()
-    create_account_submit_button.draw()
+        pygame.display.update()
 
-    pygame.display.update()
+    elif current_screen == "controls":
+        screen.blit(background_image, (0, 0))  # Draw background image
+        back_button.draw()  # Back button to return to main menu
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+
+            # Back Button Logic
+            if back_button.check_if_clicked(event):
+                current_screen = "main_menu"
+
+        pygame.display.update()
+
     clock.tick(60)
-
-
-pygame.quit()
-
