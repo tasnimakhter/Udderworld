@@ -8,8 +8,9 @@ pygame.display.set_caption('UDDERWORLD')
 
 # Load the background image once outside the loop
 background_image = pygame.image.load('background.png').convert()
-controls1_image = pygame.image.load('controls1-1.png').convert()
-controls2_image = pygame.image.load('controls2-1.png').convert()
+controls1_image = pygame.image.load('controls1.png').convert()
+controls2_image = pygame.image.load('controls2.png').convert()
+
 
 # Font colors
 orange = (255, 69, 0)
@@ -232,13 +233,6 @@ while True:
             # Back Button Logic
             if back_button.check_if_clicked(event):
                 current_screen = "main_menu"
-<<<<<<< Updated upstream
-<<<<<<< Updated upstream
-          
-=======
->>>>>>> Stashed changes
-=======
->>>>>>> Stashed changes
 
             # Submit Button Logic
             if create_account_submit_button.check_if_clicked(event):
@@ -331,14 +325,15 @@ while True:
                 current_screen = "main_menu"
 
             if switch_button.check_if_clicked(event):
-                current_screen == "altcontrols"
+                current_screen = "altcontrols"
+                print("switching to altcontrols") # debugging
+                print(f"Current screen: {current_screen}")
                 
 
         pygame.display.update()
 
     elif current_screen == "altcontrols":
         screen.blit(controls2_image, (0, 0))  # Draw background image
-        ''' the button pics aren't right and text should be in yellow not green, go back on ppt and change this image, also the screen image will not switch for some reason '''
         backTOP_button.draw()  # Back button to return to main menu
         switch_button.draw() # Switch to alternative controls
 
@@ -352,7 +347,10 @@ while True:
                 current_screen = "main_menu"
 
             if switch_button.check_if_clicked(event):
-                current_screen == "controls"
+                current_screen = "controls"
+                print("switching to controls")
+                print(f"Current screen: {current_screen}")
+
 
         pygame.display.update()
 
