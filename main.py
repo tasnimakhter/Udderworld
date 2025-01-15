@@ -232,7 +232,10 @@ while True:
             # Back Button Logic
             if back_button.check_if_clicked(event):
                 current_screen = "main_menu"
+<<<<<<< Updated upstream
           
+=======
+>>>>>>> Stashed changes
 
             # Submit Button Logic
             if create_account_submit_button.check_if_clicked(event):
