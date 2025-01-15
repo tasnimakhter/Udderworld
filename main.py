@@ -233,7 +233,10 @@ while True:
             if back_button.check_if_clicked(event):
                 current_screen = "main_menu"
 <<<<<<< Updated upstream
+<<<<<<< Updated upstream
           
+=======
+>>>>>>> Stashed changes
 =======
 >>>>>>> Stashed changes
 
