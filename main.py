@@ -1,5 +1,7 @@
 import pygame
 import unicodedata
+import sqlite3
+import database
 
 pygame.init()
 clock = pygame.time.Clock()
@@ -24,6 +26,28 @@ subtitle_font = pygame.font.Font('pixelFont.ttf', 80)
 box_subtitle_font = pygame.font.Font('pixelFont.ttf', 30)
 button_font = pygame.font.Font('pixelFont.ttf', 75)
 username_font = pygame.font.Font('pixelFont.ttf', 40)
+
+
+# database design
+# connection and cursor objects
+conn = sqlite3.connect("CG_database.db")
+cur = conn.cursor()
+
+# creating TBL_Player with fields
+
+cur.execute('''
+            CREATE TABLE IF NOT EXISTS TBL_Player
+            ([username], TEXT PRIMARY KEY, [password] TEXT, [room_num] INTEGER)
+            ''')
+conn.commit()
+
+cur.execute('''
+            SELECT name FROM sqlite_master WHERE type = 'table'
+            ''')
+print(cur.fetchall())
+
+
+
 
 # OOP INPUT CLASS
 class Input_Box:
@@ -165,7 +189,7 @@ exit_button = Button('EXIT', 650, 500, orange, button_font)
 login_subtitle = Text('LOGIN', 650, 275, orange, subtitle_font)
 
 create_account_button = Button('CREATE ACCOUNT', 650, 550, orange, button_font)
-create_account_submit_button = Button('SUBMIT', 1100, 430, yellow, button_font)
+submit_button = Button('SUBMIT', 1100, 430, yellow, button_font)
 back_button = Button('BACK', 200, 600, red, button_font)
 backTOP_button = Button('BACK', 140, 40, red, button_font)
 
@@ -183,6 +207,8 @@ create_account_boxes = [username_box, password_box, passwordcheck_box]
 
 # Screen Control
 current_screen = "main_menu"
+
+
 
 while True:
     if current_screen == "main_menu":
@@ -215,7 +241,7 @@ while True:
         username_subtitle.draw()
         password_box.display()
         password_subtitle.draw()
-        create_account_submit_button.draw()
+        submit_button.draw()
         back_button.draw()
 
         for event in pygame.event.get():
@@ -235,7 +261,7 @@ while True:
                 current_screen = "main_menu"
 
             # Submit Button Logic
-            if create_account_submit_button.check_if_clicked(event):
+            if submit_button.check_if_clicked(event):
                 username = username_box.input.strip()
                 password = password_box.password.strip()
 
@@ -263,7 +289,7 @@ while True:
         password_subtitle.draw()
         passwordcheck_box.display()
         confirm_password_subtitle.draw()
-        create_account_submit_button.draw()
+        submit_button.draw()
         back_button.draw()
 
         for event in pygame.event.get():
@@ -283,7 +309,7 @@ while True:
             passwordcheck_box.handle_event(event)
 
             # Submit Button Logic
-            if create_account_submit_button.check_if_clicked(event):
+            if submit_button.check_if_clicked(event):
                 username = username_box.input.strip()
                 password = password_box.password.strip()
                 confirm_password = passwordcheck_box.password.strip()
@@ -301,12 +327,32 @@ while True:
                     validation4_subtitle.draw()
                     print("Passwords do not match!")
                 else:
-                    success_subtitle.draw()
-                    print(f"Account created successfully: USERNAME: {username}, PASSWORD: {password}")
-                    current_screen = "login"
-                    username_box.clear_input()
-                    password_box.clear_input()
-                    passwordcheck_box.clear_input()
+                    try: 
+                        # inserting data into the database
+                        cur.execute(
+                            '''
+                            INSERT INTO TBL_Player (username, password, room_num)
+                            VALUES (?, ?, ?)
+                            ''',
+                            (username, password, 0) # placeholder for room num
+                        )
+                        conn.commit() # save changes to database
+
+                        cur.execute("SELECT * FROM TBL_Player")
+                        print(cur.fetchall())
+
+                        success_subtitle.draw()
+                        print(f"Account created successfully: USERNAME: {username}, PASSWORD: {password}")
+                        current_screen = "login"
+                        username_box.clear_input()
+                        password_box.clear_input()
+                        passwordcheck_box.clear_input()
+                    except sqlite3.IntegrityError:
+                        # handling duplicates
+                        validation1_subtitle.draw()
+                        print("Error: Username already exists!")
+
+                    
 
         pygame.display.update()
 
