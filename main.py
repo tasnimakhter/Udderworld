@@ -1,7 +1,6 @@
 import pygame
 import unicodedata
 import sqlite3
-import database
 
 pygame.init()
 clock = pygame.time.Clock()
@@ -27,24 +26,44 @@ box_subtitle_font = pygame.font.Font('pixelFont.ttf', 30)
 button_font = pygame.font.Font('pixelFont.ttf', 75)
 username_font = pygame.font.Font('pixelFont.ttf', 40)
 
+# login messages handling
+error_message = ""
+error_display_end_time = 0  # Time in milliseconds when error should disappear
+error_duration = 3000  # Duration in ms (e.g., 3000ms = 3 seconds)
+
 
 # database design
 # connection and cursor objects
-conn = sqlite3.connect("CG_database.db")
+conn = sqlite3.connect("UDD_database.db")
 cur = conn.cursor()
 
 # creating TBL_Player with fields
 
 cur.execute('''
             CREATE TABLE IF NOT EXISTS TBL_Player
-            ([username], TEXT PRIMARY KEY, [password] TEXT, [room_num] INTEGER)
+            ([username], TEXT PRIMARY KEY, 
+            [password] TEXT,
+            [room_num] INTEGER)
             ''')
 conn.commit()
+conn.close()
 
-cur.execute('''
-            SELECT name FROM sqlite_master WHERE type = 'table'
-            ''')
-print(cur.fetchall())
+def username_exists(username):
+    conn = sqlite3.connect("UDD_database.db")
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM TBL_Player WHERE username = ?", (username,))
+    result = cur.fetchone()
+    conn.close()
+    return result if result is not None else False
+
+def verify_user(username, password):
+    conn = sqlite3.connect("UDD_database.db")
+    cur = conn.cursor()
+    cur.execute("SELECT password FROM TBL_Player WHERE username = ?", (username,))
+    row = cur.fetchone()
+    conn.close()
+    # If no row is found, username doesn't exist; otherwise, compare passwords.
+    return row is not None and row[0] == password
 
 
 
@@ -145,6 +164,7 @@ class Password_Box(Input_Box):
         self.password = ""
 
 # OOP TEXT CLASS
+
 class Text:
     def __init__(self, text, x, y, color, font):
         self.text = text
@@ -201,6 +221,9 @@ validation2_subtitle = Text('Password cannot be empty!', 200, 400, orange, subti
 validation3_subtitle = Text('Password must be at least 8 characters long!', 200, 400, orange, subtitle_font)
 validation4_subtitle = Text('Passwords do not match!', 200, 400, orange, subtitle_font)
 success_subtitle = Text('Success!', 200, 400, orange, subtitle_font)
+
+username_exists_subtitle = Text('Username already exists!', 200, 400, orange, subtitle_font)
+
 
 
 create_account_boxes = [username_box, password_box, passwordcheck_box]
@@ -266,17 +289,35 @@ while True:
                 password = password_box.password.strip()
 
                 if not username:
+                    error_message = "Username cannot be empty!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Username cannot be empty!")
-                    validation1_subtitle.draw()
                 elif not password:
+                    error_message = "Password cannot be empty!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Password cannot be empty!")
-                    validation2_subtitle.draw()
-                elif len(password) < 8:
-                    print("Password must be at least 8 characters long!")
-                    validation3_subtitle.draw()
+                elif not username_exists(username):
+                    error_message = "Username does not exist!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
+                    print("Username does not exist!")
+                elif not verify_user(username, password):
+                    error_message = "Incorrect password!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
+                    print("Incorrect password!")
                 else:
-                    success_subtitle.draw()
-                    print(f"Inputs submitted: USERNAME: {username}, PASSWORD: {password}")
+                    error_message = "Login Successful!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
+                    print(f"Login successful: USERNAME: {username}")
+                    # If desired, change current_screen or proceed further after a successful login
+
+        # Display the feedback message (error or success) if it's still active
+        current_time = pygame.time.get_ticks()
+        if error_message and current_time < error_display_end_time:
+            message_surf = subtitle_font.render(error_message, True, blue)
+            message_rect = message_surf.get_rect(center=(650, 100))  # Adjust position as needed
+            screen.blit(message_surf, message_rect)
+        elif current_time >= error_display_end_time:
+            error_message = ""
 
         pygame.display.update()
 
@@ -315,31 +356,39 @@ while True:
                 confirm_password = passwordcheck_box.password.strip()
 
                 if not username:
-                    validation1_subtitle.draw()
+                    error_message = "Username cannot be empty!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Username cannot be empty!")
+                elif username_exists(username):
+                    error_message = "Username already exists!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
+                    print("Error: Username already exists!")
                 elif not password:
-                    validation2_subtitle.draw()
+                    error_message = "Password cannot be empty!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Password cannot be empty!")
                 elif len(password) < 8:
-                    validation3_subtitle.draw()
+                    error_message = "Password must be at least 8 characters long!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Password must be at least 8 characters long!")
                 elif password != confirm_password:
-                    validation4_subtitle.draw()
+                    error_message = "Passwords do not match!"
+                    error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Passwords do not match!")
                 else:
-                    try: 
-                        # inserting data into the database
+                    try:
+                        # Inserting data into the database
+                        conn = sqlite3.connect("UDD_database.db")
+                        cur = conn.cursor()
                         cur.execute(
                             '''
                             INSERT INTO TBL_Player (username, password, room_num)
                             VALUES (?, ?, ?)
                             ''',
-                            (username, password, 0) # placeholder for room num
+                            (username, password, 0)  # Placeholder for room number
                         )
-                        conn.commit() # save changes to database
-
-                        cur.execute("SELECT * FROM TBL_Player")
-                        print(cur.fetchall())
+                        conn.commit()
+                        conn.close()
 
                         success_subtitle.draw()
                         print(f"Account created successfully: USERNAME: {username}, PASSWORD: {password}")
@@ -348,11 +397,18 @@ while True:
                         password_box.clear_input()
                         passwordcheck_box.clear_input()
                     except sqlite3.IntegrityError:
-                        # handling duplicates
-                        validation1_subtitle.draw()
+                        error_message = "Username already exists!"
+                        error_display_end_time = pygame.time.get_ticks() + error_duration
                         print("Error: Username already exists!")
 
-                    
+        # Display the error message if it is still active.
+        current_time = pygame.time.get_ticks()
+        if error_message and current_time < error_display_end_time:
+            error_surf = subtitle_font.render(error_message, True, blue)
+            error_rect = error_surf.get_rect(center=(650, 100))  # Adjust position as needed
+            screen.blit(error_surf, error_rect)
+        elif current_time >= error_display_end_time:
+            error_message = ""
 
         pygame.display.update()
 
@@ -387,6 +443,7 @@ while True:
             if event.type == pygame.QUIT:
                 pygame.quit()
                 exit()
+
 
             # Back Button Logic
             if backTOP_button.check_if_clicked(event):
