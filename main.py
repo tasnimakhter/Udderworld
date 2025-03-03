@@ -11,6 +11,9 @@ pygame.display.set_caption('UDDERWORLD')
 background_image = pygame.image.load('background.png').convert()
 controls1_image = pygame.image.load('controls1.png').convert()
 controls2_image = pygame.image.load('controls2.png').convert()
+start_gameSCREEN_image = pygame.image.load('start_gameSCREEN.png').convert()
+resized_image = pygame.transform.scale(start_gameSCREEN_image, (1300, 720))
+start_gameSCREEN_image = resized_image
 
 
 # Font colors
@@ -19,6 +22,7 @@ red = (255, 0, 0)
 blue = (0, 0, 255)
 green = (0, 255, 0)
 yellow = (255, 255, 0)
+pink = (255, 16, 240)
 
 # TEXT FONT AND TEXT DEFINITIONS
 subtitle_font = pygame.font.Font('pixelFont.ttf', 80)
@@ -223,10 +227,9 @@ validation4_subtitle = Text('Passwords do not match!', 200, 400, orange, subtitl
 success_subtitle = Text('Success!', 200, 400, orange, subtitle_font)
 
 username_exists_subtitle = Text('Username already exists!', 200, 400, orange, subtitle_font)
-
-
-
 create_account_boxes = [username_box, password_box, passwordcheck_box]
+
+start_gameSCREEN_subtitle = Text('GO FORTH...', 650, 150, pink, subtitle_font)
 
 # Screen Control
 current_screen = "main_menu"
@@ -308,7 +311,8 @@ while True:
                     error_message = "Login Successful!"
                     error_display_end_time = pygame.time.get_ticks() + error_duration
                     print(f"Login successful: USERNAME: {username}")
-                    # If desired, change current_screen or proceed further after a successful login
+                    current_screen = "start_game"
+                    
 
         # Display the feedback message (error or success) if it's still active
         current_time = pygame.time.get_ticks()
@@ -453,7 +457,16 @@ while True:
                 current_screen = "controls"
                 print("switching to controls")
                 print(f"Current screen: {current_screen}")
+        pygame.display.update()
 
+    elif current_screen == "start_game":
+        screen.blit(start_gameSCREEN_image,(0,0))
+        start_gameSCREEN_subtitle.draw()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
 
         pygame.display.update()
 
