@@ -1,13 +1,14 @@
 import pygame
 import unicodedata
 import sqlite3
+import hashlib
 
 pygame.init()
 clock = pygame.time.Clock()
 screen = pygame.display.set_mode((1300, 720))
 pygame.display.set_caption('UDDERWORLD')
 
-# Load the background image once outside the loop
+# load the background image once outside the loop
 background_image = pygame.image.load('background.png').convert()
 controls1_image = pygame.image.load('controls1.png').convert()
 controls2_image = pygame.image.load('controls2.png').convert()
@@ -16,7 +17,7 @@ resized_image = pygame.transform.scale(start_gameSCREEN_image, (1300, 720))
 start_gameSCREEN_image = resized_image
 
 
-# Font colors
+# font colours
 orange = (255, 69, 0)
 red = (255, 0, 0)
 blue = (0, 0, 255)
@@ -36,7 +37,7 @@ error_display_end_time = 0  # Time in milliseconds when error should disappear
 error_duration = 3000  # Duration in ms (e.g., 3000ms = 3 seconds)
 
 
-# database design
+# database Design
 # connection and cursor objects
 conn = sqlite3.connect("UDD_database.db")
 cur = conn.cursor()
@@ -66,9 +67,22 @@ def verify_user(username, password):
     cur.execute("SELECT password FROM TBL_Player WHERE username = ?", (username,))
     row = cur.fetchone()
     conn.close()
-    # If no row is found, username doesn't exist; otherwise, compare passwords.
-    return row is not None and row[0] == password
+    # if no row is found, username doesn't exist; otherwise, compare passwords.
+    if row is None:
+        return False # username doesnt exist
+    
+    stored_hashed_password = row[0] # hashed pwd from db
+    hashed_input_password = hashing(password) # hash input
+    return row[0] == hashed_input_password # comparing hashes
 
+def hashing(password): 
+    # changes password into bytes so it can be hashed
+    password = password.encode('utf-8')
+    # create new hash object // SHA-3-256
+    sha3_256 = hashlib.sha3_256
+    # hashes and converts to hex
+    hashed_password = sha3_256(password).hexdigest()
+    return hashed_password
 
 
 
@@ -79,26 +93,26 @@ class Input_Box:
         self.y = y
         self.width = width
         self.height = height
-        self.input = str(input)  # Ensure input is always a string
+        self.input = str(input)  # ensure input is always a string
         self.color = orange
         self.selected = False
-        self.font = username_font  # Default font
+        self.font = username_font  # default font
         self.backspace_timer = 0
-        self.backspace_delay = 200  # Delay in milliseconds
+        self.backspace_delay = 200  # delay in milliseconds
         self.rect = pygame.Rect(x, y, width, height)
         self.max_width = self.width - 10
 
     def set_font_size(self, size):
-        # Updates the font size for the input box
+        # updates the font size for the input box
         self.font = pygame.font.Font('pixelFont.ttf', size)
 
     def truncate_input(self):
-        # Ensures the input text fits within the input box by truncating if necessary
+        # ensures the input text fits within the input box by truncating if necessary
         while self.font.render(self.input, True, self.color).get_width() > self.max_width:
             self.input = self.input[:-1]
 
     def display(self):
-        # Render the input text inside the box
+        # render the input text inside the box
         pygame.draw.rect(screen, (0, 0, 0), self.rect)  # Draw background
         pygame.draw.rect(screen, self.color, self.rect, 2)  # Draw border
         input_text = self.input if isinstance(self.input, str) else ""
@@ -106,9 +120,9 @@ class Input_Box:
         screen.blit(input_surf, (self.x + 5, self.y + 5))  # Render text with padding
 
     def handle_event(self, event):
-        # Handle mouse click and key press events for input boxes
+        # handle mouse click and key press events for input boxes
         if event.type == pygame.MOUSEBUTTONDOWN:
-            # Activate box if clicked
+            # activate box if clicked
             if self.rect.collidepoint(pygame.mouse.get_pos()):
                 self.selected = True
                 self.color = yellow
@@ -124,7 +138,7 @@ class Input_Box:
                 self.truncate_input()
 
     def clear_input(self):
-        # Clear the input text
+        # clear the input text
         self.input = ""
 
 # password box - asterisk for privacy, inherited from the input box
@@ -134,9 +148,9 @@ class Password_Box(Input_Box):
         self.password = ""  # stores actual password
 
     def display(self):
-        # Display original password as asterisks
-        pygame.draw.rect(screen, (0, 0, 0), self.rect)  # Box background
-        pygame.draw.rect(screen, self.color, self.rect, 2)  # Box border
+        # display original password as asterisks
+        pygame.draw.rect(screen, (0, 0, 0), self.rect)  # box background
+        pygame.draw.rect(screen, self.color, self.rect, 2)  # box border
         masked_input = "*" * len(self.password)
         input_surf = self.font.render(masked_input, True, self.color)
         screen.blit(input_surf, (self.rect.x + 5, self.rect.y + 5))
@@ -159,18 +173,18 @@ class Password_Box(Input_Box):
                 self.truncate_input()
 
     def truncate_input(self):
-        # Ensure the password stays within the box
+        # ensure the password stays within the box
         while self.font.render("*" * len(self.password), True, self.color).get_width() > self.max_width:
             self.password = self.password[:-1]
 
     def clear_input(self):
-        # Clear the password text
+        # clear the password text
         self.password = ""
 
 # OOP TEXT CLASS
 
 class Text:
-    def __init__(self, text, x, y, color, font):
+    def __init__(self, text, x, y, color, font, duration = None):
         self.text = text
         self.x = x
         self.y = y
@@ -178,10 +192,19 @@ class Text:
         self.font = font
         self.text_surf = self.font.render(self.text, True, self.color)
         self.rect = self.text_surf.get_rect(midtop=(self.x, self.y))
+        self.duration = duration # duration in ms 
+        self.start_time = None # stores start time when displayed
 
     # DISPLAY TEXT METHOD
     def draw(self):
-        screen.blit(self.text_surf, self.rect)
+        if self.start_time is None:
+            screen.blit(self.text_surf, self.rect)
+        elif pygame.time.get_ticks() - self.start_time < self.duration:
+            screen.blit(self.text_surf, self.rect) # only draws if within the time limit
+
+    def start_timer(self):
+        # starts timer when the subtitle is displayedZ
+        self.start_time = pygame.time.get_ticks()
 
 # OOP BUTTON CLASS - SUBCLASS OF TEXT CLASS (inherits)
 class Button(Text):
@@ -189,12 +212,118 @@ class Button(Text):
         super().__init__(text, x, y, color, font)
 
     def check_if_clicked(self, event):
-        # Return True only if the button is clicked and the mouse button is released
+        # return true only if the button is clicked and the mouse button is released
         if event.type == pygame.MOUSEBUTTONUP and self.rect.collidepoint(pygame.mouse.get_pos()):
             return True
         return False
 
-# Input Boxes & Subtitles
+
+
+# PLAYER CLASS
+class Player: 
+    def __init__(self, x, y, sprite_sheet, scale_factor = 2):
+        self.x = x
+        self.y = y
+        self.speed = 5
+        self.scale_factor = scale_factor
+        self.control_mode = "arrows" # default controls
+
+        # load sprite sheet 
+        self.sprite_sheet = sprite_sheet
+        self.width = 32
+        self.height = 32
+        self.new_width = int(self.width * self.scale_factor)
+        self.new_height = int(self.height * self.scale_factor)
+
+        # load animations
+        self.idle_sprite = self.get_sprite(0, 0)
+        self.run_right_frames = [self.get_sprite(i, 0) for i in range(1, 3)] # row 1 / right
+        self.run_left_frames = [pygame.transform.flip(frame, True, False) for frame in self.run_right_frames] # row 2 / flip right to left
+        self.run_down_frames = [self.get_sprite(i, 3) for i in range(4)]  # row 3 / down
+        self.run_up_frames = [self.get_sprite(i, 4) for i in range(4)]  # row 4 / up
+
+        # animation settings
+        self.current_animation = [self.idle_sprite]
+        self.frame_index = 0
+        self.animation_speed = 220  # ms per frame
+        self.last_update_time = pygame.time.get_ticks()
+        self.moving = False
+
+    # SPRITES SETUP
+
+    # function to extract sprites from sheet and scale
+    def get_sprite(self, col, row):
+        # scaling and extracting
+        x = col * self.width
+        y = row * self.height
+        sprite = self.sprite_sheet.subsurface(pygame.Rect(x, y, self.width, self.height))
+        scaled_sprite = pygame.transform.scale(sprite, (self.new_width, self.new_height))
+
+        return scaled_sprite
+
+    def handle_input(self):
+            # handling movement updates / animations
+            keys = pygame.key.get_pressed()
+            moving = False
+            previous_animation = self.current_animation
+
+            if self.control_mode == "arrows":
+                left, right, up, down = pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN
+            else:  # WASD Movement
+                left, right, up, down = pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s
+
+            if keys[left]:  # Move left
+                self.x -= self.speed
+                self.set_animation(self.run_left_frames)
+                moving = True
+            elif keys[right]:  # Move right
+                self.x += self.speed
+                self.set_animation(self.run_right_frames)
+                moving = True
+            elif keys[down]:  # Move down
+                self.y += self.speed
+                self.set_animation(self.run_down_frames)
+                moving = True
+            elif keys[up]:  # Move up
+                self.y -= self.speed
+                self.set_animation(self.run_up_frames)
+                moving = True
+            else:
+                self.current_animation = [self.idle_sprite]
+
+            if self.current_animation != previous_animation:
+                self.frame_index = 0
+
+            return moving
+    
+    def set_animation(self, new_animation):
+            # sets new animation if different from current
+            if self.current_animation != new_animation:
+                self.current_animation = new_animation
+                self.frame_index = 0
+    
+    def update_animation(self, moving):
+            # updates animation frame only if moving
+            current_time = pygame.time.get_ticks()
+            if moving:
+                if current_time - self.last_update_time >= self.animation_speed:
+                    self.frame_index = (self.frame_index + 1) % len(self.current_animation)
+                    self.last_update_time = current_time
+            else:
+                self.frame_index = 0 # resets to idle frame
+
+    def update(self):
+        # handles movement and animation update
+        moving = self.handle_input()
+        self.update_animation(moving)
+
+    def draw(self, screen):
+            # draw sprite on the screen
+            if 0 <= self.frame_index < len(self.current_animation):
+                screen.blit(self.current_animation[self.frame_index], (self.x, self.y))
+
+
+# input boxes and subtitles
 username_box = Input_Box(600, 400, 250, 50)
 username_box.set_font_size(40)
 username_subtitle = Text('USERNAME', 500, 400, orange, box_subtitle_font)
@@ -206,7 +335,7 @@ password_subtitle = Text('PASSWORD', 500, 480, orange, box_subtitle_font)
 passwordcheck_box = Password_Box(600, 560, 250, 50)
 confirm_password_subtitle = Text('CONFIRM PASSWORD', 430, 567, orange, box_subtitle_font)
 
-# Buttons and Titles
+# buttons and titles
 login_button = Button('LOGIN', 650, 300, orange, button_font)
 controls_button = Button('CONTROLS', 650, 400, orange, button_font)
 exit_button = Button('EXIT', 650, 500, orange, button_font)
@@ -218,6 +347,8 @@ back_button = Button('BACK', 200, 600, red, button_font)
 backTOP_button = Button('BACK', 140, 40, red, button_font)
 
 switch_button = Button('SWITCH?', 1110, 40, red, button_font)
+WASD_subtitle = Text('USING WASD', 650, 40, blue, subtitle_font, duration = 3000)
+ARROWS_subtitle = Text('USING ARROWS', 650, 40, blue, subtitle_font, duration = 3000)
 
 create_account_subtitle = Text('CREATE AN ACCOUNT', 650, 275, orange, subtitle_font)
 validation1_subtitle = Text('Username cannot be empty!', 200, 400, orange, subtitle_font)
@@ -231,7 +362,15 @@ create_account_boxes = [username_box, password_box, passwordcheck_box]
 
 start_gameSCREEN_subtitle = Text('GO FORTH...', 650, 150, pink, subtitle_font)
 
-# Screen Control
+
+
+# INITIALISING PLAYER
+sprite_sheet = pygame.image.load("cows_spritesheet_white_pinkspots.png").convert_alpha()
+# CREATING PLAYER INSTANCE
+player = Player(600, 400, sprite_sheet)
+
+
+# screen control
 current_screen = "main_menu"
 
 
@@ -241,7 +380,7 @@ while True:
         screen.blit(background_image, (0, 0))
         login_button.draw()
         controls_button.draw()
-        exit_button.draw()
+        exit_button.draw()  # drawing display MAIN MENU
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -253,7 +392,7 @@ while True:
             if login_button.check_if_clicked(event):
                 current_screen = "login"
                 username_box.clear_input()
-                password_box.clear_input()
+                password_box.clear_input()  # clears boxes so the user can login without having to delete previous entries
             if controls_button.check_if_clicked(event):
                 current_screen = "controls"
 
@@ -268,7 +407,7 @@ while True:
         password_box.display()
         password_subtitle.draw()
         submit_button.draw()
-        back_button.draw()
+        back_button.draw() # drawing display
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -280,41 +419,41 @@ while True:
                 password_box.clear_input()
                 passwordcheck_box.clear_input()
             username_box.handle_event(event)
-            password_box.handle_event(event)
+            password_box.handle_event(event) # handling submissions by taking input and clearing boxes for the user so that they can then login
 
-            # Back Button Logic
+            # back button Logic
             if back_button.check_if_clicked(event):
                 current_screen = "main_menu"
 
-            # Submit Button Logic
+            # submit button Logic
             if submit_button.check_if_clicked(event):
                 username = username_box.input.strip()
                 password = password_box.password.strip()
 
-                if not username:
+                if not username: # input validation - presence check
                     error_message = "Username cannot be empty!"
                     error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Username cannot be empty!")
                 elif not password:
-                    error_message = "Password cannot be empty!"
+                    error_message = "Password cannot be empty!" # presence check
                     error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Password cannot be empty!")
                 elif not username_exists(username):
-                    error_message = "Username does not exist!"
+                    error_message = "Username does not exist!" # checks if existing account is in database
                     error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Username does not exist!")
-                elif not verify_user(username, password):
+                elif not verify_user(username, password): # checks for correct password
                     error_message = "Incorrect password!"
                     error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Incorrect password!")
                 else:
-                    error_message = "Login Successful!"
+                    error_message = "Login Successful!" # successful login
                     error_display_end_time = pygame.time.get_ticks() + error_duration
                     print(f"Login successful: USERNAME: {username}")
                     current_screen = "start_game"
                     
 
-        # Display the feedback message (error or success) if it's still active
+        # display the feedback message if still active
         current_time = pygame.time.get_ticks()
         if error_message and current_time < error_display_end_time:
             message_surf = subtitle_font.render(error_message, True, blue)
@@ -335,14 +474,14 @@ while True:
         passwordcheck_box.display()
         confirm_password_subtitle.draw()
         submit_button.draw()
-        back_button.draw()
+        back_button.draw() # draws display
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 exit()
 
-            # Back Button Logic
+            # back button logic
             if back_button.check_if_clicked(event):
                 current_screen = "login"
                 username_box.clear_input()
@@ -353,7 +492,7 @@ while True:
             password_box.handle_event(event)
             passwordcheck_box.handle_event(event)
 
-            # Submit Button Logic
+            # submit button logic
             if submit_button.check_if_clicked(event):
                 username = username_box.input.strip()
                 password = password_box.password.strip()
@@ -375,13 +514,16 @@ while True:
                     error_message = "Password must be at least 8 characters long!"
                     error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Password must be at least 8 characters long!")
-                elif password != confirm_password:
+                elif password != confirm_password: # checks if the two inputted passwords match
                     error_message = "Passwords do not match!"
                     error_display_end_time = pygame.time.get_ticks() + error_duration
                     print("Passwords do not match!")
                 else:
                     try:
-                        # Inserting data into the database
+                        # hashing password before storing
+                        hashed_password = hashing(password)
+
+                        # inserting data into the database
                         conn = sqlite3.connect("UDD_database.db")
                         cur = conn.cursor()
                         cur.execute(
@@ -389,7 +531,7 @@ while True:
                             INSERT INTO TBL_Player (username, password, room_num)
                             VALUES (?, ?, ?)
                             ''',
-                            (username, password, 0)  # Placeholder for room number
+                            (username, hashed_password, 0)  # Placeholder for room number
                         )
                         conn.commit()
                         conn.close()
@@ -404,12 +546,13 @@ while True:
                         error_message = "Username already exists!"
                         error_display_end_time = pygame.time.get_ticks() + error_duration
                         print("Error: Username already exists!")
+            
 
-        # Display the error message if it is still active.
+        # display the error message if still active.
         current_time = pygame.time.get_ticks()
         if error_message and current_time < error_display_end_time:
             error_surf = subtitle_font.render(error_message, True, blue)
-            error_rect = error_surf.get_rect(center=(650, 100))  # Adjust position as needed
+            error_rect = error_surf.get_rect(center=(650, 100))  # adjust position as needed
             screen.blit(error_surf, error_rect)
         elif current_time >= error_display_end_time:
             error_message = ""
@@ -417,58 +560,74 @@ while True:
         pygame.display.update()
 
     elif current_screen == "controls":
-        screen.blit(controls1_image, (0, 0))  # Draw background image
-        backTOP_button.draw()  # Back button to return to main menu
-        switch_button.draw() # Switch to alternative controls
+        screen.blit(controls1_image, (0, 0))  # draw background image
+        backTOP_button.draw()  # back button to return to main menu
+        switch_button.draw() # switch to alternative controls
+
+        ARROWS_subtitle.draw()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 exit()
 
-            # Back Button Logic
+            # back button logic
             if backTOP_button.check_if_clicked(event):
                 current_screen = "main_menu"
 
             if switch_button.check_if_clicked(event):
+                player.control_mode = "wasd"  # switch to wasd controls
                 current_screen = "altcontrols"
-                print("switching to altcontrols") # debugging
-                print(f"Current screen: {current_screen}")
-                
+                print("Switched to WASD controls") # debugging
+                ARROWS_subtitle.start_timer()
+                    
 
         pygame.display.update()
 
     elif current_screen == "altcontrols":
-        screen.blit(controls2_image, (0, 0))  # Draw background image
-        backTOP_button.draw()  # Back button to return to main menu
-        switch_button.draw() # Switch to alternative controls
+        screen.blit(controls2_image, (0, 0))  # draw background image
+        backTOP_button.draw()  # back button to return to main menu
+        switch_button.draw() # switch to alternative controls
+
+        WASD_subtitle.draw()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 exit()
 
-
-            # Back Button Logic
+            # back button logic
             if backTOP_button.check_if_clicked(event):
                 current_screen = "main_menu"
 
             if switch_button.check_if_clicked(event):
+                player.control_mode = "arrows"  # switch to arrow key controls
                 current_screen = "controls"
-                print("switching to controls")
-                print(f"Current screen: {current_screen}")
+                print("Switched to arrow key controls") # debugging
+                WASD_subtitle.start_timer()
+                    
         pygame.display.update()
 
     elif current_screen == "start_game":
-        screen.blit(start_gameSCREEN_image,(0,0))
-        start_gameSCREEN_subtitle.draw()
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
                 exit()
 
-        pygame.display.update()
+        player.update()
 
+        # drawing background
+        screen.blit(start_gameSCREEN_image,(0,0))
+        start_gameSCREEN_subtitle.draw()
+
+        # update and draw sprite
+        player.draw(screen)
+
+
+
+        pygame.display.flip()
+        clock.tick(60)
 
     clock.tick(60)
+ 
