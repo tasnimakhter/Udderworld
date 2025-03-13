@@ -1,5 +1,4 @@
 import pygame
-import unicodedata
 import sqlite3
 import hashlib
 
@@ -12,10 +11,11 @@ pygame.display.set_caption('UDDERWORLD')
 background_image = pygame.image.load('background.png').convert()
 controls1_image = pygame.image.load('controls1.png').convert()
 controls2_image = pygame.image.load('controls2.png').convert()
-start_gameSCREEN_image = pygame.image.load('start_gameSCREEN.png').convert()
-resized_image = pygame.transform.scale(start_gameSCREEN_image, (1300, 720))
-start_gameSCREEN_image = resized_image
-
+room1_image = pygame.image.load('room1.png').convert()
+rescaled_image = pygame.transform.scale(room1_image, (1300, 720))
+room1_image = rescaled_image
+room1_subtitle_timer = None
+room1_subtitle_duration = 3000
 
 # font colours
 orange = (255, 69, 0)
@@ -217,14 +217,26 @@ class Button(Text):
             return True
         return False
 
+# SWITCHING ROOMS
 
+def switch_room(room_name):
+    global current_room
+    current_room = rooms[room_name]  # Change to the new room
+    
+    # puts player at entrance
+    if room_name == "room2":
+        player.x = 80  # starting pos in new room
+        player.y = 250  # adjust to match entrance alignment
+    elif room_name == "room1":
+        player.x = 10  # puts player at the exit of room2
+        player.y = 500
 
 # PLAYER CLASS
 class Player: 
     def __init__(self, x, y, sprite_sheet, scale_factor = 2):
         self.x = x
         self.y = y
-        self.speed = 5
+        self.speed = 3
         self.scale_factor = scale_factor
         self.control_mode = "arrows" # default controls
 
@@ -261,41 +273,54 @@ class Player:
 
         return scaled_sprite
 
+        
     def handle_input(self):
-            # handling movement updates / animations
-            keys = pygame.key.get_pressed()
-            moving = False
-            previous_animation = self.current_animation
+        keys = pygame.key.get_pressed()
+        moving = False
+        previous_animation = self.current_animation
 
-            if self.control_mode == "arrows":
-                left, right, up, down = pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN
-            else:  # WASD Movement
-                left, right, up, down = pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s
+        # choosing set of controls
+        if self.control_mode == "arrows": # arrows
+            left, right, up, down = pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN
+        else:  # WASD
+            left, right, up, down = pygame.K_a, pygame.K_d, pygame.K_w, pygame.K_s
 
-            if keys[left]:  # Move left
-                self.x -= self.speed
-                self.set_animation(self.run_left_frames)
-                moving = True
-            elif keys[right]:  # Move right
-                self.x += self.speed
-                self.set_animation(self.run_right_frames)
-                moving = True
-            elif keys[down]:  # Move down
-                self.y += self.speed
-                self.set_animation(self.run_down_frames)
-                moving = True
-            elif keys[up]:  # Move up
-                self.y -= self.speed
-                self.set_animation(self.run_up_frames)
-                moving = True
-            else:
-                self.current_animation = [self.idle_sprite]
+        # predicting movement
+        new_x, new_y = self.x, self.y
 
-            if self.current_animation != previous_animation:
-                self.frame_index = 0
+        if keys[left]:  
+            new_x -= self.speed
+            self.set_animation(self.run_left_frames)
+            moving = True
+        elif keys[right]:  
+            new_x += self.speed
+            self.set_animation(self.run_right_frames)
+            moving = True
+        elif keys[down]:  
+            new_y += self.speed
+            self.set_animation(self.run_down_frames)
+            moving = True
+        elif keys[up]:  
+            new_y -= self.speed
+            self.set_animation(self.run_up_frames)
+            moving = True
+        else:
+            self.current_animation = [self.idle_sprite]  # Idle when not moving
+        
+        if self.current_animation != previous_animation:
+            self.frame_index = 0
+        
+        if current_room == room1 and new_x > 1200:
+            switch_room("room2")
 
-            return moving
-    
+        if not current_room.check_collision(new_x, new_y, self.new_width, self.new_height):
+            self.x, self.y = new_x, new_y
+
+        current_room.check_boundaries(self)
+
+        return moving
+
+
     def set_animation(self, new_animation):
             # sets new animation if different from current
             if self.current_animation != new_animation:
@@ -321,6 +346,34 @@ class Player:
             # draw sprite on the screen
             if 0 <= self.frame_index < len(self.current_animation):
                 screen.blit(self.current_animation[self.frame_index], (self.x, self.y))
+
+
+# ROOM CLASS
+class Room:
+        def __init__(self, background_image, unwalkablle_areas, boundaries):
+            self.background = pygame.image.load(background_image).convert()
+            self.unwalkable_areas = unwalkablle_areas # list of pygame.Rect obj
+            self.boundaries = boundaries # left right top bottom
+
+        def draw(self): # draws bg and collision areas
+            screen.blit(pygame.transform.scale(self.background, (1300, 720)), (0,0))
+
+            #for area in self.unwalkable_areas:
+            #    pygame.draw.rect(screen, (0, 0, 255), area, 2) 
+
+
+        def check_collision(self, new_x, new_y, player_width, player_height): # checks if player collides with obstacles
+            player_rect = pygame.Rect(new_x, new_y, player_width, player_height)
+            for area in self.unwalkable_areas:
+                if player_rect.colliderect(area):
+                    return True 
+            return False
+        
+        def check_boundaries(self, player): # making sure player stays in room boundaries
+            left, right, top, bottom = current_room.boundaries
+            player.x = max(left, min(player.x, right))
+            player.y = max(top, min(player.y, bottom))
+
 
 
 # input boxes and subtitles
@@ -360,14 +413,52 @@ success_subtitle = Text('Success!', 200, 400, orange, subtitle_font)
 username_exists_subtitle = Text('Username already exists!', 200, 400, orange, subtitle_font)
 create_account_boxes = [username_box, password_box, passwordcheck_box]
 
-start_gameSCREEN_subtitle = Text('GO FORTH...', 650, 150, pink, subtitle_font)
-
+room1_subtitle = Text('GO FORTH...', 650, 150, pink, subtitle_font)
 
 
 # INITIALISING PLAYER
 sprite_sheet = pygame.image.load("cows_spritesheet_white_pinkspots.png").convert_alpha()
 # CREATING PLAYER INSTANCE
 player = Player(600, 400, sprite_sheet)
+
+blue
+
+# INSTANTIATING ROOMS
+room1 = Room (
+    "room1.png", # background
+    [ 
+    pygame.Rect(50, 300, 1300, 100),
+    pygame.Rect(10, 300, 20, 400),
+    pygame.Rect(1200, 400, 200, 95),
+    pygame.Rect(1200, 598, 200, 95),
+    pygame.Rect(400, 598, 55, 95),
+    pygame.Rect(400, 390, 55, 95),
+    pygame.Rect(825, 598, 55, 95),
+    pygame.Rect(825, 390, 55, 95),
+    pygame.Rect(50, 665, 1300, 100) # obstacles 
+    ],
+    (0, 1300 - player.new_width, 0, 720 - player.new_height) # boundaries
+)
+
+room2 = Room(
+    "room2.png",  # background
+    [   # define obstacles for room2
+        pygame.Rect(50, 150, 1300, 100),
+        pygame.Rect(10, 300, 45, 400),
+        pygame.Rect(1200, 450, 200, 150),
+        pygame.Rect(1200, 250, 200, 95),
+        pygame.Rect(90, 598, 1300, 95),
+        pygame.Rect(80, 370, 240, 300),
+    ],
+    (0, 1300 - player.new_width, 0, 720 - player.new_height)  # boundaries
+)
+
+rooms = {
+    "room1" : room1,
+    "room2" : room2,
+    }
+
+current_room = rooms["room1"]
 
 
 # screen control
@@ -531,7 +622,7 @@ while True:
                             INSERT INTO TBL_Player (username, password, room_num)
                             VALUES (?, ?, ?)
                             ''',
-                            (username, hashed_password, 0)  # Placeholder for room number
+                            (username, hashed_password, 0)  # placeholder for room number
                         )
                         conn.commit()
                         conn.close()
@@ -609,6 +700,7 @@ while True:
         pygame.display.update()
 
     elif current_screen == "start_game":
+        
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -618,8 +710,17 @@ while True:
         player.update()
 
         # drawing background
-        screen.blit(start_gameSCREEN_image,(0,0))
-        start_gameSCREEN_subtitle.draw()
+        current_room.draw()
+        player.update()
+        player.draw(screen)
+
+        # ensure timer starts when entering the room
+        if room1_subtitle_timer is None:
+            room1_subtitle_timer = pygame.time.get_ticks()  # set the start time
+
+        # check if less than 3 seconds have passed
+        if pygame.time.get_ticks() - room1_subtitle_timer < room1_subtitle_duration:
+            room1_subtitle.draw()  # only display while within the time limit
 
         # update and draw sprite
         player.draw(screen)
@@ -628,6 +729,7 @@ while True:
 
         pygame.display.flip()
         clock.tick(60)
+
 
     clock.tick(60)
  
