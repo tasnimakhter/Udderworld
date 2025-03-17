@@ -347,7 +347,63 @@ class Player:
             if 0 <= self.frame_index < len(self.current_animation):
                 screen.blit(self.current_animation[self.frame_index], (self.x, self.y))
 
+# ENEMY CLASS
+class Enemy:
+    def __init__(self, x, y, sprite_sheet, scale_factor = 2, speed = 2):
+        self.x = x
+        self.y = y
+        self.speed = speed
+        self.direction = 1  # 1 for right, -1 for left
+        self.scale_factor = scale_factor
 
+        # load sprite sheet
+        self.sprite_sheet = sprite_sheet
+        self.width = 16
+        self.height = 16
+        self.new_width = int(self.width * self.scale_factor)
+        self.new_height = int(self.height * self.scale_factor)
+
+        # extract animation frames
+        self.idle_sprite = self.get_sprite(0, 0)
+        self.run_frames = [self.idle_sprite]
+
+        # animation settings
+        self.current_animation = self.run_frames
+        self.frame_index = 0
+        self.animation_speed = 220  # ms per frame
+        self.last_update_time = pygame.time.get_ticks()
+
+    def get_sprite(self, col, row):
+        # extracts and scales sprite frames from the sprite sheet
+        x = col * self.width
+        y = row * self.height
+        sprite = self.sprite_sheet.subsurface(pygame.Rect(x, y, self.width, self.height))
+        scaled_sprite = pygame.transform.scale(sprite, (self.new_width, self.new_height))
+        return scaled_sprite
+
+    def move(self):
+        # moves the enemy in a simple back-and-forth pattern
+        self.x += self.speed * self.direction
+        if self.x > 1000 or self.x < 200:  # reverse direction at edges
+            self.direction *= -1
+
+    def update_animation(self):
+        # updates the animation frame
+        current_time = pygame.time.get_ticks()
+        if current_time - self.last_update_time >= self.animation_speed:
+            self.frame_index = (self.frame_index + 1) % len(self.current_animation)
+            self.last_update_time = current_time
+
+    def draw(self, screen):
+        # draws the enemy on the screen
+        if self.frame_index < len(self.current_animation):
+            screen.blit(self.current_animation[self.frame_index], (self.x, self.y))
+
+    def update(self):
+        # updates movement and animation
+        self.move()
+        self.update_animation()
+        
 # ROOM CLASS
 class Room:
         def __init__(self, background_image, unwalkablle_areas, boundaries):
@@ -416,12 +472,14 @@ create_account_boxes = [username_box, password_box, passwordcheck_box]
 room1_subtitle = Text('GO FORTH...', 650, 150, pink, subtitle_font)
 
 
-# INITIALISING PLAYER
+# INITIALISING PLAYER/ENEMY
 sprite_sheet = pygame.image.load("cows_spritesheet_white_pinkspots.png").convert_alpha()
-# CREATING PLAYER INSTANCE
+enemy_sprite_sheet = pygame.image.load("Carrot-sheet.png").convert_alpha()
+# CREATING PLAYER/ENEMY INSTANCE
 player = Player(600, 400, sprite_sheet)
+enemy = Enemy(500, 300, enemy_sprite_sheet)
 
-blue
+
 
 # INSTANTIATING ROOMS
 room1 = Room (
@@ -722,6 +780,10 @@ while True:
         if pygame.time.get_ticks() - room1_subtitle_timer < room1_subtitle_duration:
             room1_subtitle.draw()  # only display while within the time limit
 
+        if current_room == room2:
+            enemy.update()
+            enemy.draw(screen)
+
         # update and draw sprite
         player.draw(screen)
 
@@ -732,4 +794,6 @@ while True:
 
 
     clock.tick(60)
+
+    
  
