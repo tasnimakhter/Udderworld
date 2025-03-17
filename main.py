@@ -349,7 +349,7 @@ class Player:
 
 # ENEMY CLASS
 class Enemy:
-    def __init__(self, x, y, sprite_sheet, scale_factor = 2, speed = 2):
+    def __init__(self, x, y, sprite_sheet, scale_factor = 2, speed = 4):
         self.x = x
         self.y = y
         self.speed = speed
@@ -358,8 +358,8 @@ class Enemy:
 
         # load sprite sheet
         self.sprite_sheet = sprite_sheet
-        self.width = 16
-        self.height = 16
+        self.width = 64
+        self.height = 64
         self.new_width = int(self.width * self.scale_factor)
         self.new_height = int(self.height * self.scale_factor)
 
@@ -377,6 +377,7 @@ class Enemy:
         # extracts and scales sprite frames from the sprite sheet
         x = col * self.width
         y = row * self.height
+        print(f"Extracting sprite at: ({x}, {y}) with dimensions {self.width}x{self.height}")
         sprite = self.sprite_sheet.subsurface(pygame.Rect(x, y, self.width, self.height))
         scaled_sprite = pygame.transform.scale(sprite, (self.new_width, self.new_height))
         return scaled_sprite
@@ -384,7 +385,7 @@ class Enemy:
     def move(self):
         # moves the enemy in a simple back-and-forth pattern
         self.x += self.speed * self.direction
-        if self.x > 1000 or self.x < 200:  # reverse direction at edges
+        if self.x > 800 or self.x < 400:  # reverse direction at edges
             self.direction *= -1
 
     def update_animation(self):
