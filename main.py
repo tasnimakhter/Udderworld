@@ -349,7 +349,7 @@ class Player:
 
 # ENEMY CLASS
 class Enemy:
-    def __init__(self, x, y, sprite_sheet, scale_factor = 2, speed = 4):
+    def __init__(self, x, y, sprite_sheet, scale_factor = 2, speed = 3):
         self.x = x
         self.y = y
         self.speed = speed
@@ -365,7 +365,12 @@ class Enemy:
 
         # extract animation frames
         self.idle_sprite = self.get_sprite(0, 0)
-        self.run_frames = [self.idle_sprite]
+        self.run_frames = [    
+            self.get_sprite(0, 0),  # 1st frame
+            self.get_sprite(1, 0),  # 2nd frame
+            self.get_sprite(2, 0),  # 3rd frame
+            self.get_sprite(3, 0)   # 4th frame
+        ]
 
         # animation settings
         self.current_animation = self.run_frames
@@ -377,7 +382,6 @@ class Enemy:
         # extracts and scales sprite frames from the sprite sheet
         x = col * self.width
         y = row * self.height
-        print(f"Extracting sprite at: ({x}, {y}) with dimensions {self.width}x{self.height}")
         sprite = self.sprite_sheet.subsurface(pygame.Rect(x, y, self.width, self.height))
         scaled_sprite = pygame.transform.scale(sprite, (self.new_width, self.new_height))
         return scaled_sprite
