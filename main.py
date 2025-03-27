@@ -1,11 +1,23 @@
 import pygame
 import sqlite3
 import hashlib
+import math 
+import random
+import heapq
 
 pygame.init()
 clock = pygame.time.Clock()
 screen = pygame.display.set_mode((1300, 720))
 pygame.display.set_caption('UDDERWORLD')
+
+# font colours
+orange = (255, 69, 0)
+red = (255, 0, 0)
+blue = (0, 0, 255)
+green = (0, 255, 0)
+yellow = (255, 255, 0)
+pink = (255, 16, 240)
+white = (255, 255, 255)
 
 # load the background image once outside the loop
 background_image = pygame.image.load('background.png').convert()
@@ -17,13 +29,11 @@ room1_image = rescaled_image
 room1_subtitle_timer = None
 room1_subtitle_duration = 3000
 
-# font colours
-orange = (255, 69, 0)
-red = (255, 0, 0)
-blue = (0, 0, 255)
-green = (0, 255, 0)
-yellow = (255, 255, 0)
-pink = (255, 16, 240)
+# A* VARIABLES
+TILE_SIZE = 40
+GRID_WIDTH = 1300 // TILE_SIZE
+GRID_HEIGHT = 720 // TILE_SIZE
+
 
 # TEXT FONT AND TEXT DEFINITIONS
 subtitle_font = pygame.font.Font('pixelFont.ttf', 80)
@@ -35,6 +45,7 @@ username_font = pygame.font.Font('pixelFont.ttf', 40)
 error_message = ""
 error_display_end_time = 0  # Time in milliseconds when error should disappear
 error_duration = 3000  # Duration in ms (e.g., 3000ms = 3 seconds)
+
 
 
 # database Design
@@ -83,6 +94,40 @@ def hashing(password):
     # hashes and converts to hex
     hashed_password = sha3_256(password).hexdigest()
     return hashed_password
+
+# A* PATHFINDING ALGORITHM
+def astar_pathfinding(grid, start, goal):
+            def heuristic(a, b):
+                return abs(a[0] - b[0]) + abs(a[1] - b[1])
+
+            open_set = []
+            heapq.heappush(open_set, (0, start))
+            came_from = {}
+            g_score = {start: 0}
+            f_score = {start: heuristic(start, goal)}
+
+            while open_set:
+                _, current = heapq.heappop(open_set)
+                if current == goal:
+                    path = []
+                    while current in came_from:
+                        path.append(current)
+                        current = came_from[current]
+                    path.reverse()
+                    return path
+
+                x, y = current
+                for dx, dy in [(-1,0),(1,0),(0,-1),(0,1)]:  # 4-directional
+                    neighbor = (x + dx, y + dy)
+                    if 0 <= neighbor[0] < GRID_WIDTH and 0 <= neighbor[1] < GRID_HEIGHT:
+                        if grid[neighbor[1]][neighbor[0]] == 1: continue  # skip walls
+                        tentative_g = g_score[current] + 1
+                        if neighbor not in g_score or tentative_g < g_score[neighbor]:
+                            came_from[neighbor] = current
+                            g_score[neighbor] = tentative_g
+                            f_score[neighbor] = tentative_g + heuristic(neighbor, goal)
+                            heapq.heappush(open_set, (f_score[neighbor], neighbor))
+            return []
 
 
 
@@ -236,9 +281,12 @@ class Player:
     def __init__(self, x, y, sprite_sheet, scale_factor = 2):
         self.x = x
         self.y = y
-        self.speed = 3
+        self.speed = 5
         self.scale_factor = scale_factor
         self.control_mode = "arrows" # default controls
+
+        self.max_hp = 100
+        self.current_hp = self.max_hp
 
         # load sprite sheet 
         self.sprite_sheet = sprite_sheet
@@ -355,6 +403,8 @@ class Enemy:
         self.speed = speed
         self.direction = 1  # 1 for right, -1 for left
         self.scale_factor = scale_factor
+        self.in_battle = False
+        self.mercy_shown = False 
 
         # load sprite sheet
         self.sprite_sheet = sprite_sheet
@@ -399,15 +449,42 @@ class Enemy:
             self.frame_index = (self.frame_index + 1) % len(self.current_animation)
             self.last_update_time = current_time
 
+    def check_collision(self, player):
+        if self.mercy_shown:
+            return False 
+        # to make smaller collision rectangles, pixels of padding around sprite
+        padding = 10 
+
+        # create rectangles for enemy and player for collision detection
+        enemy_rect = pygame.Rect(
+            self.x + padding,
+            self.y + padding,
+            self.new_width - (padding * 2),
+            self.new_height - (padding * 2)
+    )
+            
+        player_rect = pygame.Rect(
+            player.x + padding,
+            player.y + padding,
+            player.new_width - (padding * 2),
+            player.new_height - (padding * 2)
+    )
+
+        # checking for collision
+        return enemy_rect.colliderect(player_rect)
+    
+        
+
     def draw(self, screen):
         # draws the enemy on the screen
         if self.frame_index < len(self.current_animation):
             screen.blit(self.current_animation[self.frame_index], (self.x, self.y))
 
     def update(self):
-        # updates movement and animation
-        self.move()
-        self.update_animation()
+        # updates movement and animation if not in battle
+        if not self.in_battle:
+            self.move()
+            self.update_animation()
         
 # ROOM CLASS
 class Room:
@@ -435,6 +512,549 @@ class Room:
             player.x = max(left, min(player.x, right))
             player.y = max(top, min(player.y, bottom))
 
+        def get_grid(self):
+            grid = [[0 for _ in range(GRID_WIDTH)] for _ in range(GRID_HEIGHT)]
+            for y in range(GRID_HEIGHT):
+                for x in range(GRID_WIDTH):
+                    tile_rect = pygame.Rect(x * TILE_SIZE, y * TILE_SIZE, TILE_SIZE, TILE_SIZE)
+                    for obstacle in self.unwalkable_areas:
+                        if tile_rect.colliderect(obstacle):
+                            grid[y][x] = 1  # Mark as wall
+                            break
+            return grid
+
+
+
+
+# BULLET CLASS
+class Bullet:
+    def __init__(self, start_pos, target_pos, grid, speed=2, speed_y=None):
+        # convert positions to pixel coordinates
+        if isinstance(start_pos[0], int):  # if already pixel coordinates
+            self.x = start_pos[0]
+            self.y = start_pos[1]
+        else:  # if grid coordinates
+            self.x = start_pos[0] * TILE_SIZE + TILE_SIZE // 2
+            self.y = start_pos[1] * TILE_SIZE + TILE_SIZE // 2
+            
+        self.speed = speed
+        self.speed_y = speed_y
+        self.mode = "simple" if speed_y else "pathfinding"
+        
+        if self.mode == "pathfinding":
+            # convert to grid coordinates for pathfinding
+            start_grid = (start_pos[0] // TILE_SIZE if isinstance(start_pos[0], int) else start_pos[0],
+                         start_pos[1] // TILE_SIZE if isinstance(start_pos[1], int) else start_pos[1])
+            target_grid = (target_pos[0] // TILE_SIZE if isinstance(target_pos[0], int) else target_pos[0],
+                          target_pos[1] // TILE_SIZE if isinstance(target_pos[1], int) else target_pos[1])
+            
+            self.path = astar_pathfinding(grid, start_grid, target_grid)
+            self.current_index = 0
+
+        self.width = 20
+        self.height = 20
+        self.color = white
+        self.creation_time = pygame.time.get_ticks()
+        self.lifetime = 3000
+
+    def update(self):
+        if pygame.time.get_ticks() - self.creation_time > self.lifetime:
+            return "expired"
+
+        if self.mode == "simple":
+            self.y += self.speed_y 
+            return "alive"
+        
+        if self.mode == "pathfinding" and self.path:
+            if self.current_index >= len(self.path):
+                return "expired"
+                
+            target = self.path[self.current_index]
+            target_x = target[0] * TILE_SIZE + TILE_SIZE // 2
+            target_y = target[1] * TILE_SIZE + TILE_SIZE // 2
+            
+            dx = target_x - self.x
+            dy = target_y - self.y
+            distance = math.sqrt(dx*dx + dy*dy)
+            
+            if distance < self.speed:
+                self.current_index += 1
+            else:
+                self.x += (dx/distance) * self.speed
+                self.y += (dy/distance) * self.speed
+            
+            return "alive"
+        
+        return "expired"
+
+    def draw(self, screen):
+        pygame.draw.rect(screen, self.color, (int(self.x), int(self.y), self.width, self.height))
+
+    def check_collision(self, target_rect):
+        bullet_rect = pygame.Rect(self.x, self.y, self.width, self.height)
+        return bullet_rect.colliderect(target_rect)
+
+# BATTLE CLASS
+class Battle:
+    def __init__(self, player, enemy, heart_width=20 , heart_height=20):
+        self.player = player
+        self.enemy = enemy
+        self.bullets = [] # bullets as an array
+        self.attack_timer = pygame.time.get_ticks()
+        self.dodging_timer = None
+        self.dodging_duration = 10000 # 10 seconds enemy turn
+        self.item_timer = None
+        self.item_duration = 2000  # item image time
+        self.wave_interval = 1000 # controls time for each wave of bullets
+        self.last_wave_time = 0 
+        self.game_over = False # game over screen trigger logic
+        self.mercy_count = 0 # track how many times mercy was clicked
+        self.mercy_timer = None # timer for mercy messages
+        self.mercy_message = "" # current mercy message
+        self.mercy_shown = False # track if mercy was shown
+        
+
+        # battle ui elements
+        self.box_width = 400
+        self.box_height = 300
+        self.box_x = (1300 - self.box_width) // 2
+        self.box_y = (720 - self.box_height) // 2 - 50
+
+        # player and battle movement constraints
+        self.battle_player_speed = 4  # movement speed in battle
+
+        # bullet handling
+        self.bullets = []
+
+        # battle stats
+        self.player_level = 1 # player lvl
+        self.damage_per_hit = 10
+        self.player_current_hp = 100
+        self.enemy_max_hp = 100 # total hp
+        self.enemy_current_hp = 100 # current hp
+        self.butterknife_image = pygame.image.load("butterknife.PNG").convert_alpha() # load butterknife image
+        self.butterknife_damage = 10 # damage dealt by butterknife
+        self.item_enabled = False # item option starts disabled
+        self.has_fought = False # tracks if player has fought at least once
+
+        # battle options
+        self.options = [
+            {'text': 'FIGHT', 'color': orange, 'selected': True}, # default selected option
+            {'text': 'ITEM', 'color': orange, 'selected': False},
+            {'text': 'MERCY', 'color': orange, 'selected': False}
+        ]
+        self.current_option = 0 # index of current selected option
+        
+        # battle state
+        self.state = "SELECTING" # options for what the player is doing like fighting etc
+        self.turn = "PLAYER" # whose turn it is
+        self.message = "" # message after an action
+        self.message_timer = None # timer for the message display
+        self.message_duration = 3000 # duration in ms for displaying messages
+
+        # heart dimensions
+        self.heart_width = heart_width
+        self.heart_height = heart_height
+        self.battle_player_x = self.box_x + self.box_width // 2 - self.heart_width // 2
+        self.battle_player_y = self.box_y + self.box_height // 2 - self.heart_height // 2
+        self.heart_color = red
+
+        # load battle images
+        self.load_battle_images()
+
+    def load_battle_images(self):
+        # loads images for player and anemy during battle
+        self.player_battle_image = pygame.image.load("cow_battle.png").convert_alpha()
+        self.enemy_battle_image = pygame.image.load("carrot_battle.png").convert_alpha()
+        self.heart_image = pygame.Surface((self.heart_width, self.heart_height))
+        self.heart_image.fill(self.heart_color)
+
+        try:
+            self.butterknife_image = pygame.image.load("butterknife.PNG").convert_alpha()
+            print("Butterknife image loaded successfully - Dimensions:", 
+                  self.butterknife_image.get_width(), "x",
+                  self.butterknife_image.get_height())
+        except pygame.error as e:
+            print(f"ERROR: Could not load butterknife image: {e}")
+            self.butterknife_image = pygame.Surface((100, 100))
+            self.butterknife_image.fill((255, 0, 0))
+            print("Created placeholder surafce instead")
+
+    def draw(self, screen):
+        # draw battle ui including all elements
+        screen.fill((0, 0, 0))
+
+        # draw bullets
+        for bullet in self.bullets:
+            bullet.draw(screen)
+        
+        # draw player and enemy // left side
+        player_image_x = 100
+        player_image_y = 100
+        enemy_image_x = 100
+        enemy_image_y = 350
+        self.player_battle_image = pygame.transform.scale(self.player_battle_image, (150, 150))
+        self.enemy_battle_image = pygame.transform.scale(self.enemy_battle_image, (150, 150))
+        
+        # draw player stats // right side
+        stats_x = 900
+        stats_y = 150
+        
+        # draw LV and HP
+        lv_text = pygame.font.Font('pixelFont.ttf', 50).render(f"LV {self.player_level}", True, white)
+        hp_text = pygame.font.Font('pixelFont.ttf', 50).render("HP", True, white)
+        
+        screen.blit(lv_text, (stats_x, stats_y))
+        screen.blit(hp_text, (stats_x, stats_y + 50))
+        
+        # draw HP bar
+        hp_bar_width = 150
+        hp_bar_height = 20
+        hp_bar_x = stats_x + 60
+        hp_bar_y = stats_y + 50
+
+        enemy_hp_bar_width = 400
+        enemy_hp_bar_height = 20
+        enemy_hp_bar_x = (1300 - enemy_hp_bar_width) // 2
+        enemy_hp_bar_y = 20
+
+        # draw enemy HP bar background
+        pygame.draw.rect(screen, (128, 128, 128), (enemy_hp_bar_x, enemy_hp_bar_y, enemy_hp_bar_width, enemy_hp_bar_height))
+
+        # draw current enemy HP
+        current_enemy_hp_width = (self.enemy_current_hp / self.enemy_max_hp) * enemy_hp_bar_width
+        pygame.draw.rect(screen, (255, 0, 0), (enemy_hp_bar_x, enemy_hp_bar_y, current_enemy_hp_width, enemy_hp_bar_height))
+
+        # draw enemy HP numbers
+        enemy_hp_numbers = pygame.font.Font('pixelFont.ttf', 20).render(f"{self.enemy_current_hp}/{self.enemy_max_hp}", True, white)
+        screen.blit(enemy_hp_numbers, (enemy_hp_bar_x + enemy_hp_bar_width + 10, enemy_hp_bar_y))
+        
+        # draw HP bar background
+        pygame.draw.rect(screen, (255, 0, 0), (hp_bar_x, hp_bar_y, hp_bar_width, hp_bar_height))
+        
+        # draw current HP
+        current_hp_width = (self.player.current_hp / self.player.max_hp) * hp_bar_width
+        pygame.draw.rect(screen, (255, 255, 0), (hp_bar_x, hp_bar_y, current_hp_width, hp_bar_height))
+
+        # draw HP numbers
+        hp_numbers = pygame.font.Font('pixelFont.ttf', 30).render(f"{self.player.current_hp}/{self.player.max_hp}", True, white)
+        screen.blit(hp_numbers, (hp_bar_x + hp_bar_width + 20, hp_bar_y))
+        
+        # draw butterknife image if ITEM is selected
+        if self.state == "ITEM":
+            butterknife_x = 1000
+            butterknife_y = 400
+            screen.blit(self.butterknife_image, (butterknife_x, butterknife_y))
+
+            pygame.draw.rect(screen, (255, 0, 0), (butterknife_x, butterknife_y, 100, 100), 2)
+
+            try:
+                # Scale the image if needed
+                scaled_knife = pygame.transform.scale(self.butterknife_image, (100, 100))
+                screen.blit(scaled_knife, (butterknife_x, butterknife_y))
+            except:
+                print("Failed to draw butterknife")  # debug
+
+        # disable ITEM option if not available
+        if not self.item_enabled:
+            for option in self.options:
+                if option["text"] == "ITEM":
+                    option["colour"] = (128, 128, 128) # GREY OUT ITEM OPTION
+                    break
+        else: 
+            for option in self.options:
+                if option["text"] == "ITEM":
+                    option["colour"] = orange
+
+        # draw battle box in middle
+        if self.state == "DODGING":
+            # expand the battle box for dodging area
+            dodge_box_x = self.box_x - 50
+            dodge_box_y = self.box_y - 50
+            dodge_box_width = self.box_width + 100
+            dodge_box_height = self.box_height + 100
+            
+            # draw dodging area as a larger box
+            pygame.draw.rect(screen, white, (dodge_box_x, dodge_box_y, dodge_box_width, dodge_box_height), 4)
+
+            # draw heart inside dodging area
+            pygame.draw.rect(screen, self.heart_color, (self.battle_player_x, self.battle_player_y, self.heart_width, self.heart_height))
+
+        else:
+            # default small battle box
+            pygame.draw.rect(screen, white, (self.box_x, self.box_y, self.box_width, self.box_height), 4)
+        
+        # draw battle options at bottom
+        option_width = 300
+        option_height = 100
+        option_padding = 40
+        option_y = 600 # all options are same height
+
+        # define colors and text for options
+        option_styles = {
+            "FIGHT": {"color": red},   
+            "ITEM": {"color": blue}, 
+            "MERCY": {"color": green} 
+        }
+            
+        
+        for i, option in enumerate(self.options):
+            option_x = 300 + i * (option_width + option_padding) # calculates x pos
+            option_y = 600 # y pos is same for all the options
+
+            # loop through option_styles to get the correct style for the button
+            style = {"color": white}  # default style
+            for s in option_styles:
+                if s == option["text"]:
+                    style = option_styles[s]  # assign the correct style if found
+                    break
+
+            default_color = style["color"]
+
+            border_color = yellow if option["selected"] else default_color # highlights if chosen
+
+            
+            # draw option background and border
+            pygame.draw.rect(screen, (0, 0, 0), (option_x, option_y, option_width, option_height), border_radius=20) 
+            pygame.draw.rect(screen, border_color, (option_x, option_y, option_width, option_height), 5, border_radius=20)
+
+            # draw option text
+            option_text = button_font.render(option['text'], True, option['color'])
+            option_text_rect = option_text.get_rect(center=(option_x + option_width // 2, option_y + option_height // 2))
+            screen.blit(option_text, option_text_rect)
+            
+           
+        # draw battle message if any
+        if self.message:
+            current_time = pygame.time.get_ticks()  # Get the current time
+
+            # if the timer hasn't started yet start it 
+            if self.message_timer is None:
+                self.message_timer = current_time  
+
+            # if the message is still within the display duration then render it
+            if current_time - self.message_timer < self.message_duration:
+                message_text = box_subtitle_font.render(self.message, True, white)  # render message text
+                message_x = self.box_x + self.box_width // 2  # center x pos
+                message_y = self.box_y - 40  # position message slightly above the battle box
+                message_rect = message_text.get_rect(center=(message_x, message_y))  # align the text
+                screen.blit(message_text, message_rect)  # draw the message on screen
+
+            # if the time has passed then reset the message
+            else:
+                self.message = ""  # clear the message
+                self.message_timer = None  # reset timer for future messages
+        
+        if self.mercy_message and self.mercy_timer:
+            mercy_text = box_subtitle_font.render(self.mercy_message, True, white)
+            # position mercy message in center of battle box
+            mercy_rect = mercy_text.get_rect(center=(
+                self.box_x + self.box_width // 2,
+                self.box_y + self.box_height // 2
+            ))
+            screen.blit(mercy_text, mercy_rect)
+        
+        # draw player and enemy images
+        try:
+            screen.blit(self.player_battle_image, (player_image_x, player_image_y))
+            screen.blit(self.enemy_battle_image, (enemy_image_x, enemy_image_y))
+        except:
+            # if images aren't loaded, draw placeholder rectangles
+            pygame.draw.rect(screen, white, (player_image_x, player_image_y, 100, 100))
+            pygame.draw.rect(screen, white, (enemy_image_x, enemy_image_y, 100, 100))
+
+
+
+    def handle_input(self, event):
+        if self.state == "SELECTING":
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_LEFT or event.key == pygame.K_a:
+                    # move selection left
+                    self.options[self.current_option]['selected'] = False
+                    self.current_option = (self.current_option - 1) % len(self.options)
+                    self.options[self.current_option]['selected'] = True
+                elif event.key == pygame.K_RIGHT or event.key == pygame.K_d:
+                    # move selection right
+                    self.options[self.current_option]['selected'] = False
+                    self.current_option = (self.current_option + 1) % len(self.options)
+                    self.options[self.current_option]['selected'] = True
+                elif event.key == pygame.K_RETURN or event.key == pygame.K_SPACE:
+                    # select the current option
+                    self.state = self.options[self.current_option]['text']
+                    
+                    # transition to dodging state if enemy attacks
+                    if self.state == "FIGHT":  
+                        self.state = "DODGING"
+                        self.attack_timer = pygame.time.get_ticks()
+                        self.has_fought = True # player has fought so enable item option
+                        self.item_enabled = True
+                        self.message = "You attacked!"
+                        self.message_timer = pygame.time.get_ticks()
+                        self.turn = "ENEMY"  # enemy gets a turn after the player attacks
+                        self.spawn_bullet_wave() # spawns bullets immediately when fight starts
+                        self.last_wave_time = pygame.time.get_ticks() # reset timer so next wave comes quickly
+
+                    elif self.state == "ITEM":
+                        if self.item_enabled:
+                            print("Using butterknife!") 
+                            self.state = "ITEM" # item option selected
+                            self.user_item() # uses item on enemy
+                            self.item_enabled = False
+                            self.turn = "ENEMY"
+                        else: 
+                            self.message = "Fight first to use items!" # so that player cant deal damage without fighting
+                            self.message_timer = pygame.time.get_ticks()
+                            self.state = "SELECTING"
+
+                    elif self.state == "MERCY":
+                        # player gets two chances to show mercy
+                        if self.mercy_count == 0:
+                            self.mercy_message = "Mercy? MERCYYYY???"
+                            self.mercy_count += 1
+                            self.mercy_timer = pygame.time.get_ticks()
+                            self.message_timer = pygame.time.get_ticks()
+                        elif self.mercy_count == 1:
+                            self.mercy_message = "what a wuss..."
+                            self.mercy_count += 1
+                            self.mercy_timer = pygame.time.get_ticks()
+                            self.message_timer = pygame.time.get_ticks()
+                            self.mercy_shown = True
+
+                elif event.key == pygame.K_ESCAPE:
+                    # return to game
+                    global current_screen
+                    current_screen = "start_game"
+                    self.enemy.in_battle = False  
+
+    def user_item(self):
+        # use butterknife to attack the enemy
+        self.enemy_current_hp -= self.butterknife_damage
+        if self.enemy_current_hp < 0:
+            self.enemy_current_hp = 0
+        self.message = f"You used the butterknife! Enemy lost {self.butterknife_damage} HP!"
+        self.message_timer = pygame.time.get_ticks()
+        self.item_enabled = False
+        self.has_fought = False 
+        self.item_timer = pygame.time.get_ticks()
+
+    def handle_dodging_input(self):
+        keys = pygame.key.get_pressed()
+        if keys[pygame.K_LEFT] or keys[pygame.K_a]:
+            self.battle_player_x -= self.battle_player_speed
+        if keys[pygame.K_RIGHT] or keys[pygame.K_d]:
+            self.battle_player_x += self.battle_player_speed
+        if keys[pygame.K_UP] or keys[pygame.K_w]:
+            self.battle_player_y -= self.battle_player_speed
+        if keys[pygame.K_DOWN] or keys[pygame.K_s]:
+            self.battle_player_y += self.battle_player_speed
+
+        # clamp movement inside dodging box
+        dodge_box_x = self.box_x - 50
+        dodge_box_y = self.box_y - 50
+        dodge_box_width = self.box_width + 100
+        dodge_box_height = self.box_height + 100
+
+        self.battle_player_x = max(dodge_box_x, min(self.battle_player_x, dodge_box_x + dodge_box_width - self.heart_width))
+        self.battle_player_y = max(dodge_box_y, min(self.battle_player_y, dodge_box_y + dodge_box_height - self.heart_height))
+
+    def update(self):
+        current_time = pygame.time.get_ticks()
+        
+        if self.state == "DODGING":
+            # inititialise dodging timer if first frame
+            if self.dodging_timer is None:
+                self.dodging_timer = current_time
+                self.last_wave_time = current_time  # initialise wave timer
+                self.spawn_bullet_wave()  # first wave immediately
+                
+            self.handle_dodging_input()
+            elapsed_time = current_time - self.dodging_timer
+            
+            # end dodging phase after duration
+            if elapsed_time >= self.dodging_duration:
+                self.state = "SELECTING"
+                self.turn = "PLAYER"
+                self.bullets.clear()
+                self.dodging_timer = None
+            # spawn new wave every 800ms (instead of 2000ms)
+            elif current_time - self.last_wave_time > 800:  # faster wave frequency
+                self.spawn_bullet_wave()
+                self.last_wave_time = current_time
+            
+            # update and check all bullets
+            for bullet in self.bullets[:]:  # use copy for safe removal
+                status = bullet.update()
+                
+                # check if bullet hit player or expired
+                player_rect = pygame.Rect(self.battle_player_x, self.battle_player_y, 
+                                        self.heart_width, self.heart_height)
+                if bullet.check_collision(player_rect):
+                    self.player.current_hp -= self.damage_per_hit
+                    self.bullets.remove(bullet)
+                    
+                    if self.player.current_hp <= 0:
+                        self.player.current_hp = 0
+                        self.game_over = True
+                        return
+                elif status == "expired":
+                    self.bullets.remove(bullet)
+        
+        elif self.state == "ITEM" and self.item_timer:
+            if current_time - self.item_timer > self.item_duration:
+                self.state = "SELECTING"
+                self.turn = "ENEMY"
+                self.item_timer = None
+
+        elif self.mercy_timer:
+            elapsed = pygame.time.get_ticks() - self.mercy_timer
+            if elapsed > 2000: # 2 seconds
+                if self.mercy_count == 1:
+                    self.state = "SELECTING"
+                    self.mercy_timer = None
+                elif self.mercy_count >= 2 and self.mercy_shown:
+                    # exit battle after second mercy
+                    global current_screen
+                    current_screen = "start_game"
+                    self.enemy.mercy_shown = True
+                    # mark enemy so it won't battle again
+                    self.enemy.in_battle = True
+                    # reset mercy state for next potential battle
+                    self.mercy_count = 0
+                    self.mercy_timer = None
+                    # switch back to room2
+                    switch_room("room2")
+
+    
+    
+    def spawn_bullet_wave(self):
+        attack_type = random.choice(["spread", "targeted"])
+        wave_size = random.randint(3, 5)
+    
+        if attack_type == "spread":
+            for i in range(wave_size):
+                # spawn bullets at top of battle box (not screen top)
+                x = random.randint(self.box_x + 20, self.box_x + self.box_width - 20)  # within box width
+                y = self.box_y - 30  # top of the battle box
+                self.bullets.append(Bullet(
+                    (x, y),  # start position (pixels)
+                    (0, 0),  # dummy target
+                    current_room.get_grid(),
+                    speed_y=random.uniform(4, 8)  # faster vertical speed
+                ))
+        
+        elif attack_type == "targeted":
+            # convert battle box top to grid coordinates
+            for i in range(random.randint(1, 3)):
+                start_x = self.box_x + self.box_width // 2
+                start_y = self.box_y - 10
+                target_x = self.battle_player_x + self.heart_width//2
+                target_y = self.battle_player_y + self.heart_height//2  # use box_y instead of 0
+            
+            self.bullets.append(Bullet(
+                (start_x, start_y), (target_x, target_y),
+                current_room.get_grid(), speed=1
+            ))
+
 
 
 # input boxes and subtitles
@@ -457,7 +1077,7 @@ login_subtitle = Text('LOGIN', 650, 275, orange, subtitle_font)
 
 create_account_button = Button('CREATE ACCOUNT', 650, 550, orange, button_font)
 submit_button = Button('SUBMIT', 1100, 430, yellow, button_font)
-back_button = Button('BACK', 200, 600, red, button_font)
+back_button = Button('BACK', 140, 40, red, button_font)
 backTOP_button = Button('BACK', 140, 40, red, button_font)
 
 switch_button = Button('SWITCH?', 1110, 40, red, button_font)
@@ -476,6 +1096,8 @@ create_account_boxes = [username_box, password_box, passwordcheck_box]
 
 room1_subtitle = Text('GO FORTH...', 650, 150, pink, subtitle_font)
 
+game_over_text = Text('GAME OVER', 650, 200, red, subtitle_font)
+retry_button = Button('RETRY', 650, 400, orange, button_font)
 
 # INITIALISING PLAYER/ENEMY
 sprite_sheet = pygame.image.load("cows_spritesheet_white_pinkspots.png").convert_alpha()
@@ -484,6 +1106,11 @@ enemy_sprite_sheet = pygame.image.load("Carrot-sheet.png").convert_alpha()
 player = Player(600, 400, sprite_sheet)
 enemy = Enemy(500, 300, enemy_sprite_sheet)
 
+# load battle images
+player_battle_image = pygame.image.load("cow_battle.png").convert_alpha()  
+enemy_battle_image = pygame.image.load("carrot_battle.png").convert_alpha()  
+soul_image = pygame.Surface((20, 20))
+soul_image.fill(red)
 
 
 # INSTANTIATING ROOMS
@@ -763,8 +1390,6 @@ while True:
         pygame.display.update()
 
     elif current_screen == "start_game":
-        
-
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 pygame.quit()
@@ -772,9 +1397,8 @@ while True:
 
         player.update()
 
-        # drawing background
+        # drawing background and sprite
         current_room.draw()
-        player.update()
         player.draw(screen)
 
         # ensure timer starts when entering the room
@@ -786,18 +1410,81 @@ while True:
             room1_subtitle.draw()  # only display while within the time limit
 
         if current_room == room2:
+            # only check collision if mercy hasn't been shown
+            if not enemy.mercy_shown and enemy.check_collision(player) and not enemy.in_battle:
+                enemy.in_battle = True
+                current_screen = "battle"
+                battle_transition_time = pygame.time.get_ticks()
+            # checks for collision before updating enemy
+            if not enemy.mercy_shown:
+                enemy.update()
+                enemy.draw(screen)
+
             enemy.update()
             enemy.draw(screen)
-
-        # update and draw sprite
-        player.draw(screen)
-
 
 
         pygame.display.flip()
         clock.tick(60)
 
+    elif current_screen == "battle":
+        # initialise battle if it's the first time
+        if 'current_battle' not in globals():
+            global current_battle
+            current_battle = Battle(player, enemy)
+        
+        # handle events
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            
+            # handle battle inputs
+            current_battle.handle_input(event)
+        
+        # draw battle window and update logic
+        current_battle.update()
+        current_battle.draw(screen)
 
+        if current_battle.game_over:
+            current_screen = "game_over"
+            # reset player stats for new attempt
+            player.x = 600  # starting position
+            player.y = 400
+            player.current_hp = player.max_hp  # reset health
+            enemy.in_battle = False  # reset enemy state
+
+        pygame.display.flip()
+        clock.tick(60)
+
+    elif current_screen == "game_over":
+        screen.fill((0, 0, 0,))
+        game_over_text.draw()
+        retry_button.draw()
+
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                exit()
+            if retry_button.check_if_clicked(event):
+                current_screen = "start_game"
+                switch_room("room1") 
+                player.current_hp = player.max_hp  # reset health
+                player.x = 600
+                player.y = 400
+
+                enemy.in_battle = False  # reset enemy state
+                enemy.x = 500
+                enemy.y = 300
+
+                # clear any existing battle
+                if 'current_battle' in globals():
+                    del current_battle
+            
+        pygame.display.flip()
+        clock.tick(60)
+
+    pygame.display.flip()
     clock.tick(60)
 
     
