@@ -28,12 +28,14 @@ rescaled_image = pygame.transform.scale(room1_image, (1300, 720))
 room1_image = rescaled_image
 room1_subtitle_timer = None
 room1_subtitle_duration = 3000
+current_username = None
+previous_room_name = "room1"
+
 
 # A* VARIABLES
 TILE_SIZE = 40
 GRID_WIDTH = 1300 // TILE_SIZE
 GRID_HEIGHT = 720 // TILE_SIZE
-
 
 # TEXT FONT AND TEXT DEFINITIONS
 subtitle_font = pygame.font.Font('pixelFont.ttf', 80)
@@ -62,7 +64,59 @@ cur.execute('''
             [room_num] INTEGER)
             ''')
 conn.commit()
+
+cur.execute('''
+    CREATE TABLE IF NOT EXISTS TBL_Stats (
+        username TEXT PRIMARY KEY,
+        level INTEGER,
+        FOREIGN KEY(username) REFERENCES TBL_Player(username)
+    )
+''')
+conn.commit()
+
 conn.close()
+
+def update_player_level(username, new_level):
+    conn = sqlite3.connect("UDD_database.db")
+    cur = conn.cursor()
+    cur.execute("UPDATE TBL_Stats SET level = ? WHERE username = ?", (new_level, username))
+    conn.commit()
+    conn.close()
+
+def initialise_player_stats(username):
+    conn = sqlite3.connect("UDD_database.db")
+    cur = conn.cursor()
+    cur.execute("INSERT OR IGNORE INTO TBL_Stats (username, level) VALUES (?, ?)", (username, 1))
+    conn.commit()
+    conn.close()
+
+def update_player_room(username, room_name):
+    room_num = {"room1": 0, "room2": 1}.get(room_name, 0)  # fallback to room1
+    conn = sqlite3.connect("UDD_database.db")
+    cur = conn.cursor()
+    cur.execute("UPDATE TBL_Player SET room_num = ? WHERE username = ?", (room_num, username))
+    conn.commit()
+    conn.close()
+
+def get_player_level(username):
+    conn = sqlite3.connect("UDD_database.db")
+    cur = conn.cursor()
+    cur.execute("SELECT level FROM TBL_Stats WHERE username = ?", (username,))
+    result = cur.fetchone()
+    conn.close()
+    return result[0] if result else 1
+
+def get_saved_room(username):
+    conn = sqlite3.connect("UDD_database.db")
+    cur = conn.cursor()
+    cur.execute("SELECT room_num FROM TBL_Player WHERE username = ?", (username,))
+    result = cur.fetchone()
+    conn.close()
+    if result:
+        room_map = {0: "room1", 1: "room2"}
+        return room_map.get(result[0], "room1")
+    return "room1"
+
 
 def username_exists(username):
     conn = sqlite3.connect("UDD_database.db")
@@ -73,6 +127,8 @@ def username_exists(username):
     return result if result is not None else False
 
 def verify_user(username, password):
+    global current_username 
+    current_username = username
     conn = sqlite3.connect("UDD_database.db")
     cur = conn.cursor()
     cur.execute("SELECT password FROM TBL_Player WHERE username = ?", (username,))
@@ -85,6 +141,7 @@ def verify_user(username, password):
     stored_hashed_password = row[0] # hashed pwd from db
     hashed_input_password = hashing(password) # hash input
     return row[0] == hashed_input_password # comparing hashes
+    
 
 def hashing(password): 
     # changes password into bytes so it can be hashed
@@ -264,17 +321,25 @@ class Button(Text):
 
 # SWITCHING ROOMS
 
-def switch_room(room_name):
-    global current_room
-    current_room = rooms[room_name]  # Change to the new room
+def switch_room(room_name, entry_direction = None):
+    global current_room, previous_room_name
+    previous_room_name = [name for name, room in rooms.items() if room == current_room][0]  # track previous room
+    current_room = rooms[room_name]  # change to the new room
     
     # puts player at entrance
     if room_name == "room2":
-        player.x = 80  # starting pos in new room
-        player.y = 250  # adjust to match entrance alignment
+        if entry_direction == "from_room1": # enters from room1
+            player.x = 80
+            player.y = 250 # starting pos
+        
     elif room_name == "room1":
-        player.x = 10  # puts player at the exit of room2
+        player.x = 100
         player.y = 500
+
+    elif room_name == "room3":
+        if entry_direction == "from_room2":
+            player.x = 50  # far left near doorway
+            player.y = 500
 
 # PLAYER CLASS
 class Player: 
@@ -287,6 +352,7 @@ class Player:
 
         self.max_hp = 100
         self.current_hp = self.max_hp
+        self.player_level = 3
 
         # load sprite sheet 
         self.sprite_sheet = sprite_sheet
@@ -359,7 +425,15 @@ class Player:
             self.frame_index = 0
         
         if current_room == room1 and new_x > 1200:
-            switch_room("room2")
+            switch_room("room2", entry_direction= "from_room1")
+            return
+        if current_room == room2 and new_x > 1200:
+            switch_room("room3", entry_direction="from_room2")
+            player.x = 30
+            player.y = 350
+            return
+
+
 
         if not current_room.check_collision(new_x, new_y, self.new_width, self.new_height):
             self.x, self.y = new_x, new_y
@@ -397,7 +471,7 @@ class Player:
 
 # ENEMY CLASS
 class Enemy:
-    def __init__(self, x, y, sprite_sheet, scale_factor = 2, speed = 3):
+    def __init__(self, x, y, sprite_sheet, scale_factor = 2, speed = 3, move_range=(400, 800)):
         self.x = x
         self.y = y
         self.speed = speed
@@ -405,7 +479,10 @@ class Enemy:
         self.scale_factor = scale_factor
         self.in_battle = False
         self.mercy_shown = False 
+        self.defeated = False
+        self.move_min, self.move_max = move_range
 
+ 
         # load sprite sheet
         self.sprite_sheet = sprite_sheet
         self.width = 64
@@ -439,8 +516,9 @@ class Enemy:
     def move(self):
         # moves the enemy in a simple back-and-forth pattern
         self.x += self.speed * self.direction
-        if self.x > 800 or self.x < 400:  # reverse direction at edges
+        if self.x > self.move_max or self.x < self.move_min:
             self.direction *= -1
+
 
     def update_animation(self):
         # updates the animation frame
@@ -497,7 +575,7 @@ class Room:
             screen.blit(pygame.transform.scale(self.background, (1300, 720)), (0,0))
 
             #for area in self.unwalkable_areas:
-            #    pygame.draw.rect(screen, (0, 0, 255), area, 2) 
+             #   pygame.draw.rect(screen, (0, 0, 255), area, 2) 
 
 
         def check_collision(self, new_x, new_y, player_width, player_height): # checks if player collides with obstacles
@@ -578,6 +656,8 @@ class Bullet:
             distance = math.sqrt(dx*dx + dy*dy)
             
             if distance < self.speed:
+                self.x = target_x
+                self.y = target_y
                 self.current_index += 1
             else:
                 self.x += (dx/distance) * self.speed
@@ -627,7 +707,6 @@ class Battle:
         self.bullets = []
 
         # battle stats
-        self.player_level = 1 # player lvl
         self.damage_per_hit = 10
         self.player_current_hp = 100
         self.enemy_max_hp = 100 # total hp
@@ -701,7 +780,7 @@ class Battle:
         stats_y = 150
         
         # draw LV and HP
-        lv_text = pygame.font.Font('pixelFont.ttf', 50).render(f"LV {self.player_level}", True, white)
+        lv_text = pygame.font.Font('pixelFont.ttf', 50).render(f"LV {self.player.player_level}", True, white)
         hp_text = pygame.font.Font('pixelFont.ttf', 50).render("HP", True, white)
         
         screen.blit(lv_text, (stats_x, stats_y))
@@ -759,7 +838,7 @@ class Battle:
         if not self.item_enabled:
             for option in self.options:
                 if option["text"] == "ITEM":
-                    option["colour"] = (128, 128, 128) # GREY OUT ITEM OPTION
+                    # OUT ITEM OPTION
                     break
         else: 
             for option in self.options:
@@ -959,6 +1038,7 @@ class Battle:
 
     def update(self):
         current_time = pygame.time.get_ticks()
+        global current_screen
         
         if self.state == "DODGING":
             # inititialise dodging timer if first frame
@@ -980,6 +1060,26 @@ class Battle:
             elif current_time - self.last_wave_time > 800:  # faster wave frequency
                 self.spawn_bullet_wave()
                 self.last_wave_time = current_time
+            
+            # check if enemy HP is 0 (i.e. enemy defeated)
+            if self.enemy_current_hp <= 0:
+                self.enemy_current_hp = 0
+                self.enemy.in_battle = True  # prevent future battle
+                self.enemy.mercy_shown = True  # same logic as mercy
+                 # LEVEL UP
+                new_level = self.player.player_level + 1
+                update_player_level(current_username, new_level)  # save to DB
+                self.player.player_level = new_level  # update player object too
+
+                # SAVE CHECKPOINT
+                update_player_room(current_username, "room2")  # store current room
+
+                # return to game
+                current_screen = "start_game"
+                current_room_name = [name for name, room in rooms.items() if room == current_room][0]
+                switch_room(current_room_name)
+
+                return
             
             # update and check all bullets
             for bullet in self.bullets[:]:  # use copy for safe removal
@@ -1013,7 +1113,6 @@ class Battle:
                     self.mercy_timer = None
                 elif self.mercy_count >= 2 and self.mercy_shown:
                     # exit battle after second mercy
-                    global current_screen
                     current_screen = "start_game"
                     self.enemy.mercy_shown = True
                     # mark enemy so it won't battle again
@@ -1021,16 +1120,22 @@ class Battle:
                     # reset mercy state for next potential battle
                     self.mercy_count = 0
                     self.mercy_timer = None
-                    # switch back to room2
-                    switch_room("room2")
+                    # get the current room name from the rooms dictionary
+                    
+                    # return to game
+                    current_screen = "start_game"
+                    current_room_name = [name for name, room in rooms.items() if room == current_room][0]
+                    switch_room(current_room_name)
+                    player.x = 600
+                    player.y = 450
 
     
     
     def spawn_bullet_wave(self):
         attack_type = random.choice(["spread", "targeted"])
-        wave_size = random.randint(3, 5)
-    
+            
         if attack_type == "spread":
+            wave_size = random.randint(3, 5)
             for i in range(wave_size):
                 # spawn bullets at top of battle box (not screen top)
                 x = random.randint(self.box_x + 20, self.box_x + self.box_width - 20)  # within box width
@@ -1043,17 +1148,29 @@ class Battle:
                 ))
         
         elif attack_type == "targeted":
-            # convert battle box top to grid coordinates
-            for i in range(random.randint(1, 3)):
-                start_x = self.box_x + self.box_width // 2
+            # lock onto current player position in grid
+            player_grid_x = int((self.battle_player_x - current_room.boundaries[0]) // TILE_SIZE)
+            player_grid_y = int((self.battle_player_y - current_room.boundaries[2]) // TILE_SIZE)
+
+            # spawn from tiles near the top of the box
+            for dx in range(-2, 3):  # try several x around player
+                start_x = self.battle_player_x + dx * TILE_SIZE
                 start_y = self.box_y - 10
-                target_x = self.battle_player_x + self.heart_width//2
-                target_y = self.battle_player_y + self.heart_height//2  # use box_y instead of 0
-            
-            self.bullets.append(Bullet(
-                (start_x, start_y), (target_x, target_y),
-                current_room.get_grid(), speed=1
-            ))
+                start_grid_x = int((start_x - current_room.boundaries[0]) // TILE_SIZE)
+                start_grid_y = int((start_y - current_room.boundaries[2]) // TILE_SIZE)
+
+                if 0 <= start_grid_x < GRID_WIDTH and 0 <= start_grid_y < GRID_HEIGHT:
+                    path = astar_pathfinding(current_room.get_grid(), 
+                                            (start_grid_x, start_grid_y), 
+                                            (player_grid_x, player_grid_y))
+                    if path:
+                        self.bullets.append(Bullet(
+                            (start_grid_x, start_grid_y),     # spawn near top
+                            (player_grid_x, player_grid_y),   # path to where player *was*
+                            current_room.get_grid(),
+                            speed=3
+                        ))
+                        break  # spawn only one per wave for now
 
 
 
@@ -1143,9 +1260,27 @@ room2 = Room(
     (0, 1300 - player.new_width, 0, 720 - player.new_height)  # boundaries
 )
 
+room3 = Room(
+    "room3.png", # background
+    [
+        pygame.Rect(0, 200, 1300, 100),   # top wall
+        pygame.Rect(0, 550, 1300, 100),   # bottom wall
+        pygame.Rect(1260, 470, 70, 200),  # column on right
+    ],
+    (0, 1300 - player.new_width, 0, 720 - player.new_height)
+)
+
+enemy1 = Enemy(300, 300, enemy_sprite_sheet, move_range=(250, 400))   # 1/4 of width
+enemy2 = Enemy(650, 300, enemy_sprite_sheet, move_range=(600, 700))   # 1/2 of width
+enemy3 = Enemy(1000, 300, enemy_sprite_sheet, move_range=(950, 1100)) # 3/4 of width
+
+room3_enemies = [enemy1, enemy2, enemy3]
+
+
 rooms = {
     "room1" : room1,
     "room2" : room2,
+    "room3" : room3
     }
 
 current_room = rooms["room1"]
@@ -1153,6 +1288,8 @@ current_room = rooms["room1"]
 
 # screen control
 current_screen = "main_menu"
+
+
 
 
 
@@ -1232,6 +1369,11 @@ while True:
                     error_display_end_time = pygame.time.get_ticks() + error_duration
                     print(f"Login successful: USERNAME: {username}")
                     current_screen = "start_game"
+                    saved_room = get_saved_room(username)
+                    switch_room(saved_room)
+                    player.x = 600
+                    player.y = 500
+                    player.player_level = get_player_level(username)
                     
 
         # display the feedback message if still active
@@ -1406,10 +1548,12 @@ while True:
             room1_subtitle_timer = pygame.time.get_ticks()  # set the start time
 
         # check if less than 3 seconds have passed
-        if pygame.time.get_ticks() - room1_subtitle_timer < room1_subtitle_duration:
-            room1_subtitle.draw()  # only display while within the time limit
+        if current_room == "room1": 
+            if pygame.time.get_ticks() - room1_subtitle_timer < room1_subtitle_duration:
+                room1_subtitle.draw()  # only display while within the time limit
 
         if current_room == room2:
+            previous_room_name = [name for name, room in rooms.items() if room == current_room][0]
             # only check collision if mercy hasn't been shown
             if not enemy.mercy_shown and enemy.check_collision(player) and not enemy.in_battle:
                 enemy.in_battle = True
@@ -1423,6 +1567,22 @@ while True:
             enemy.update()
             enemy.draw(screen)
 
+        elif current_room == room3:
+            for enemy in room3_enemies:
+                if not enemy.mercy_shown and enemy.check_collision(player) and not enemy.in_battle:
+                    enemy.in_battle = True
+                    current_screen = "battle"
+                    battle_transition_time = pygame.time.get_ticks()
+                    current_battle = Battle(player, enemy)  # start battle with this enemy
+                if not enemy.mercy_shown:
+                    enemy.update()
+                    enemy.draw(screen)
+                
+        # display player level top right
+        level_display = pygame.font.Font('pixelFont.ttf', 30).render(f"LV {player.player_level}", True, white)
+        level_rect = level_display.get_rect(topright=(1280, 10))  # Adjust to fit within 1300px width
+        screen.blit(level_display, level_rect)
+        
 
         pygame.display.flip()
         clock.tick(60)
@@ -1430,7 +1590,6 @@ while True:
     elif current_screen == "battle":
         # initialise battle if it's the first time
         if 'current_battle' not in globals():
-            global current_battle
             current_battle = Battle(player, enemy)
         
         # handle events
@@ -1450,7 +1609,7 @@ while True:
             current_screen = "game_over"
             # reset player stats for new attempt
             player.x = 600  # starting position
-            player.y = 400
+            player.y = 500
             player.current_hp = player.max_hp  # reset health
             enemy.in_battle = False  # reset enemy state
 
@@ -1468,10 +1627,31 @@ while True:
                 exit()
             if retry_button.check_if_clicked(event):
                 current_screen = "start_game"
-                switch_room("room1") 
-                player.current_hp = player.max_hp  # reset health
+
+                # load checkpoint room
+                saved_room = get_saved_room(current_username)
+                switch_room(saved_room)
+
+                # reset player stats
+                player.current_hp = player.max_hp
                 player.x = 600
-                player.y = 400
+                player.y = 500
+
+                # reset enemy state based on room
+                if saved_room == "room2":
+                    enemy.in_battle = False
+                    enemy.mercy_shown = False
+                    enemy.defeated = False
+                    enemy.x = 500
+                    enemy.y = 300
+
+                elif saved_room == "room3":
+                    for e in room3_enemies:
+                        e.in_battle = False
+                        e.mercy_shown = False
+                        e.defeated = False
+                        e.x = 600
+                        e.y = 450
 
                 enemy.in_battle = False  # reset enemy state
                 enemy.x = 500
